@@ -3,6 +3,8 @@
 from decimal import Decimal
 from typing import Optional
 
+import pydantic
+
 from app.agents.deps import AgentDeps
 from app.core.exceptions import ConflictError, ValidationError
 from app.schemas.client import ClientCreate, ClientUpdate
@@ -21,8 +23,9 @@ async def create_client_impl(
             name=name, phone=phone, email=email, user_id=deps.user_id,
             invoice_day=invoice_day, consult_price=Decimal(str(consult_price)),
         )
-    except Exception as e:  # pydantic ValidationError (phone/name rules)
-        return {"success": False, "data": None, "message": f"Dados inválidos: {e}"}
+    except pydantic.ValidationError:
+        return {"success": False, "data": None,
+                "message": "Não consegui validar os dados. Confira o telefone e o nome (nome e sobrenome)."}
 
     try:
         client = await deps.client_service.create_client(payload)
@@ -90,8 +93,9 @@ async def update_client_impl(deps: AgentDeps, phone: str, **fields) -> dict:
         updated = await deps.client_service.update_client(client.id, deps.user_id, payload)
     except (ConflictError, ValidationError) as e:
         return {"success": False, "data": None, "message": str(e)}
-    except Exception as e:
-        return {"success": False, "data": None, "message": f"Dados inválidos: {e}"}
+    except pydantic.ValidationError:
+        return {"success": False, "data": None,
+                "message": "Não consegui validar os dados. Confira o telefone e o nome (nome e sobrenome)."}
     return {"success": True, "data": {"name": updated.name, "phone": updated.phone},
             "message": f"Dados de {updated.name.split()[0]} atualizados."}
 
@@ -131,8 +135,20 @@ def register_client_tools(agent) -> None:
         return await list_clients_impl(ctx.deps, active_only)
 
     @agent.tool
-    async def update_client(ctx: RunContext[AgentDeps], phone: str, **fields) -> dict:
+    async def update_client(
+        ctx: RunContext[AgentDeps],
+        phone: str,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        invoice_day: Optional[int] = None,
+        consult_price: Optional[float] = None,
+        notes: Optional[str] = None,
+    ) -> dict:
         """Atualiza dados de um cliente identificado pelo telefone."""
+        fields = {k: v for k, v in {
+            "name": name, "email": email, "invoice_day": invoice_day,
+            "consult_price": consult_price, "notes": notes,
+        }.items() if v is not None}
         return await update_client_impl(ctx.deps, phone, **fields)
 
     @agent.tool
