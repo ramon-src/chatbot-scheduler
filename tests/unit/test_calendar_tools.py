@@ -9,7 +9,10 @@ import pytest
 
 from app.agents.deps import AgentDeps
 from app.agents.tools.calendar_tools import (
+    _not_connected,
+    cancel_event_impl,
     create_event_impl,
+    create_recurring_event_impl,
     list_events_impl,
 )
 
@@ -80,3 +83,66 @@ async def test_list_events_empty_period():
     out = await list_events_impl(deps, period="today")
     assert out["success"] is True
     assert out["data"]["total"] == 0
+
+
+async def test_recurring_event_dual_writes_with_rrule():
+    cal = MagicMock()
+    cal.build_weekly_rrule.return_value = "RRULE:FREQ=WEEKLY;BYDAY=TU"
+    cal.create_event.return_value = {"id": "rec-1", "html_link": "u"}
+    es = MagicMock()
+    deps = _deps(calendar_service=cal, event_service=es, client_by_phone=_client())
+    out = await create_recurring_event_impl(
+        deps, client_phone="+5551981321543",
+        start_time=datetime(2026, 6, 23, 10, 0, tzinfo=TZ), weekdays=["TU"],
+    )
+    assert out["success"] is True
+    assert "rec-1" not in out["message"]  # no IDs leaked
+    # recurrence passed through to GCal and persisted locally
+    assert cal.create_event.call_args.kwargs["recurrence"] == ["RRULE:FREQ=WEEKLY;BYDAY=TU"]
+    assert es.record_event.call_args.kwargs["is_recurring"] is True
+
+
+async def test_recurring_event_requires_existing_client():
+    cal = MagicMock()
+    deps = _deps(calendar_service=cal, event_service=MagicMock(), client_by_phone=None)
+    out = await create_recurring_event_impl(
+        deps, client_phone="+5551999999999", start_time=datetime(2026, 6, 23, 10, tzinfo=TZ)
+    )
+    assert out["success"] is False
+    cal.create_event.assert_not_called()  # no orphan recurring event
+
+
+async def test_cancel_event_ambiguous_period_cancels_nothing():
+    client = _client()
+    e1 = SimpleNamespace(client_id=client.id, google_event_id="g1", title="Sessão - Maria Silva")
+    e2 = SimpleNamespace(client_id=client.id, google_event_id="g2", title="Sessão - Maria Silva")
+    cal = MagicMock()
+    es = MagicMock()
+    es.list_events_in_range.return_value = [e1, e2]
+    deps = _deps(calendar_service=cal, event_service=es, client_by_phone=client)
+    out = await cancel_event_impl(deps, client_phone=client.phone, period="this_week")
+    assert out["success"] is False
+    cal.cancel_event.assert_not_called()
+    es.cancel_event.assert_not_called()
+
+
+async def test_cancel_event_filters_to_this_client_and_cancels_both_sides():
+    client = _client()
+    other = SimpleNamespace(client_id=uuid4(), google_event_id="other", title="x")
+    mine = SimpleNamespace(client_id=client.id, google_event_id="g-mine", title="Sessão - Maria Silva")
+    cal = MagicMock()
+    es = MagicMock()
+    es.list_events_in_range.return_value = [other, mine]  # only `mine` belongs to client
+    deps = _deps(calendar_service=cal, event_service=es, client_by_phone=client)
+    out = await cancel_event_impl(deps, client_phone=client.phone, period="this_week")
+    assert out["success"] is True
+    cal.cancel_event.assert_called_once_with("g-mine")
+    es.cancel_event.assert_called_once_with(mine)
+
+
+def test_not_connected_returns_fresh_dict():
+    """Regression: each call must return an independent dict, not a shared mutable constant."""
+    a = _not_connected()
+    a["data"] = "mutated"
+    b = _not_connected()
+    assert b["data"] is None

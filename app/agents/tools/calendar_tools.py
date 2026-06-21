@@ -6,10 +6,12 @@ from typing import Optional
 from app.agents.deps import AgentDeps
 from app.utils.date_range import calculate_date_range
 
-_NOT_CONNECTED = {
-    "success": False, "data": None,
-    "message": "Você ainda não conectou sua Google Agenda. Posso te ajudar a conectar quando quiser.",
-}
+def _not_connected() -> dict:
+    """Fresh graceful-degradation dict (avoid sharing a mutable module constant)."""
+    return {
+        "success": False, "data": None,
+        "message": "Você ainda não conectou sua Google Agenda. Posso te ajudar a conectar quando quiser.",
+    }
 
 
 def _fmt(dt: datetime) -> str:
@@ -45,7 +47,7 @@ async def create_event_impl(
     start_time: datetime, duration_minutes: Optional[int] = None, title: Optional[str] = None,
 ) -> dict:
     if deps.calendar_service is None or deps.event_service is None:
-        return _NOT_CONNECTED
+        return _not_connected()
     client, error = await _resolve_client(deps, client_name, client_phone)
     if error:
         return error
@@ -70,7 +72,7 @@ async def create_recurring_event_impl(
     duration_minutes: Optional[int] = None, title: Optional[str] = None,
 ) -> dict:
     if deps.calendar_service is None or deps.event_service is None:
-        return _NOT_CONNECTED
+        return _not_connected()
     client, error = await _resolve_client(deps, client_name, client_phone)
     if error:
         return error
@@ -95,7 +97,7 @@ async def create_recurring_event_impl(
 
 async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
     if deps.event_service is None:
-        return _NOT_CONNECTED
+        return _not_connected()
     try:
         start, end = calculate_date_range(period, deps.current_datetime)
     except ValueError:
@@ -117,7 +119,7 @@ async def cancel_event_impl(
     period: str = "this_week", reason: Optional[str] = None,
 ) -> dict:
     if deps.calendar_service is None or deps.event_service is None:
-        return _NOT_CONNECTED
+        return _not_connected()
     client, error = await _resolve_client(deps, client_name, client_phone)
     if error:
         return error
