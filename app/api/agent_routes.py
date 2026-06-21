@@ -36,6 +36,7 @@ async def agent_message(payload: AgentMessageRequest, db: Session = Depends(get_
     if has_credentials(db, payload.user_id):
         try:
             from googleapiclient.discovery import build
+
             from app.services.google_calendar_service import GoogleCalendarService
 
             creds = load_credentials(db, payload.user_id)

@@ -9,11 +9,11 @@ from app.services.google_auth import GoogleAuthError, has_credentials, load_cred
 
 
 def _fake_row(**over):
-    base = dict(
-        refresh_token="rt", token="at", token_uri="https://oauth2.googleapis.com/token",
-        client_id="cid", client_secret="secret", scopes="https://www.googleapis.com/auth/calendar",
-        expiry=None,
-    )
+    base = {
+        "refresh_token": "rt", "token": "at", "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": "cid", "client_secret": "secret",
+        "scopes": "https://www.googleapis.com/auth/calendar", "expiry": None,
+    }
     base.update(over)
     return SimpleNamespace(**base)
 

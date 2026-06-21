@@ -2,12 +2,12 @@
 SQLAlchemy models for SimplificaPsi
 """
 
-from .user import User
-from .client import Client
 from .calendar import Calendar
+from .chat_session import ChatMessage, ChatSession
+from .client import Client
 from .event import Event, EventStatus, PaymentStatus
-from .chat_session import ChatSession, ChatMessage
 from .google_credential import GoogleCredential
+from .user import User
 
 __all__ = [
     "User",

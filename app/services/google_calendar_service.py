@@ -1,6 +1,6 @@
 """Thin wrapper over the Google Calendar v3 API resource (injected)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 
@@ -75,6 +75,6 @@ class GoogleCalendarService:
         if weekdays:
             rule += f";BYDAY={','.join(weekdays)}"
         if until is not None:
-            until_utc = until.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            until_utc = until.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
             rule += f";UNTIL={until_utc}"
         return rule
