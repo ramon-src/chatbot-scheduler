@@ -134,6 +134,8 @@ make migration MESSAGE="add x"   # cria migração autogenerate
 - **Legado mockado** (`workflow.py`, `agent_manager.py`, `calendar_agent.py`, `client_agent.py`) está marcado para remoção no Plano 1, Task 1.
 - **`phonenumbers` travado em `BR`** — multi-país é deferido.
 - **Regra herdada:** nome de cliente exige nome+sobrenome (≥2 palavras). Pode conflitar com uso conversacional ("cadastra a Maria"); revisitar se atrapalhar.
+- **Agenda — leitura pelo mirror Postgres (decisão consciente do v1).** `list_events`/`cancel_event` leem o espelho em Postgres (não o Google), porque precisam do vínculo `client_id` que só existe localmente. Consequência: eventos criados **direto no Google Calendar** (fora do agente) não aparecem para o agente. `GoogleCalendarService.list_events`/`update_event` já existem mas ainda **não são usados** por nenhuma tool — reservados para uma futura fatia de reconciliação/reagendamento. Se/quando reconciliação virar requisito, trocar a fonte de leitura para o Google e casar títulos com o Postgres.
+- **Dual-write com compensação best-effort.** Em `create_event`/`create_recurring_event`, o Google grava primeiro; se a gravação no Postgres falhar, o evento órfão no Google é removido (rollback best-effort) e a tool degrada com mensagem de retry. No cancelamento, o Google (fonte da verdade) é cancelado primeiro; falha no espelho local não derruba o sucesso.
 
 ---
 

@@ -14,6 +14,19 @@ def _not_connected() -> dict:
     }
 
 
+def _dual_write_failed() -> dict:
+    return {"success": False, "data": None,
+            "message": "Tive um problema ao registrar o agendamento. Pode tentar de novo?"}
+
+
+def _compensate_google(deps: AgentDeps, google_event_id: str) -> None:
+    """Best-effort rollback of a Google event whose local mirror write failed."""
+    try:
+        deps.calendar_service.cancel_event(google_event_id)
+    except Exception:
+        pass  # nothing more we can do; surfaced to the user as a retry prompt
+
+
 def _fmt(dt: datetime) -> str:
     return dt.strftime("%d/%m às %Hh%M").replace("h00", "h")
 
@@ -57,10 +70,16 @@ async def create_event_impl(
     summary = title or f"Sessão - {client.name}"
 
     created = deps.calendar_service.create_event(summary=summary, start=start_time, end=end)
-    deps.event_service.record_event(
-        user_id=deps.user_id, client_id=client.id, title=summary,
-        start=start_time, end=end, google_event_id=created["id"],
-    )
+    try:
+        deps.event_service.record_event(
+            user_id=deps.user_id, client_id=client.id, title=summary,
+            start=start_time, end=end, google_event_id=created["id"],
+        )
+    except Exception:
+        # Local write failed after the Google event was created: compensate by
+        # removing the orphan so the two stores stay consistent, then degrade.
+        _compensate_google(deps, created["id"])
+        return _dual_write_failed()
     first = client.name.split()[0]
     return {"success": True, "data": {"client": client.name, "start": start_time.isoformat()},
             "message": f"Agendei {first} para {_fmt(start_time)}."}
@@ -85,11 +104,15 @@ async def create_recurring_event_impl(
     created = deps.calendar_service.create_event(
         summary=summary, start=start_time, end=end, recurrence=[rrule]
     )
-    deps.event_service.record_event(
-        user_id=deps.user_id, client_id=client.id, title=summary,
-        start=start_time, end=end, google_event_id=created["id"],
-        is_recurring=True, recurrence_rule=rrule,
-    )
+    try:
+        deps.event_service.record_event(
+            user_id=deps.user_id, client_id=client.id, title=summary,
+            start=start_time, end=end, google_event_id=created["id"],
+            is_recurring=True, recurrence_rule=rrule,
+        )
+    except Exception:
+        _compensate_google(deps, created["id"])
+        return _dual_write_failed()
     first = client.name.split()[0]
     return {"success": True, "data": {"client": client.name},
             "message": f"Agendei sessões recorrentes para {first}, começando {_fmt(start_time)}."}
@@ -142,8 +165,14 @@ async def cancel_event_impl(
                 "message": "Encontrei mais de um compromisso nesse período. Pode me dizer o dia exato?"}
 
     event = events[0]
+    # Google is the source of truth: cancel there first. If the local mirror
+    # update then fails, the authoritative cancellation already succeeded — keep
+    # the success response rather than confusing the user with a false failure.
     deps.calendar_service.cancel_event(event.google_event_id)
-    deps.event_service.cancel_event(event)
+    try:
+        deps.event_service.cancel_event(event)
+    except Exception:
+        pass
     first = client.name.split()[0]
     return {"success": True, "data": {"client": client.name},
             "message": f"Cancelei o compromisso de {first}."}

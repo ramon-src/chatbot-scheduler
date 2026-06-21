@@ -85,6 +85,22 @@ async def test_list_events_empty_period():
     assert out["data"]["total"] == 0
 
 
+async def test_create_event_compensates_google_when_local_write_fails():
+    """If the Postgres write throws after the Google event is created, the orphan
+    Google event must be rolled back and the tool must degrade gracefully (no raise)."""
+    cal = MagicMock()
+    cal.create_event.return_value = {"id": "orphan-1", "html_link": "u"}
+    es = MagicMock()
+    es.record_event.side_effect = RuntimeError("db down")
+    deps = _deps(calendar_service=cal, event_service=es, client_by_phone=_client())
+    out = await create_event_impl(
+        deps, client_phone="+5551981321543", start_time=datetime(2026, 6, 22, 10, tzinfo=TZ)
+    )
+    assert out["success"] is False
+    assert "orphan-1" not in out["message"]
+    cal.cancel_event.assert_called_once_with("orphan-1")  # compensated
+
+
 async def test_recurring_event_dual_writes_with_rrule():
     cal = MagicMock()
     cal.build_weekly_rrule.return_value = "RRULE:FREQ=WEEKLY;BYDAY=TU"
