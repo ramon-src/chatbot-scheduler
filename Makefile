@@ -9,8 +9,11 @@
 # =============================================================================
 PYTHON := python3.11
 UV := uv
-DOCKER_COMPOSE := docker-compose
+DOCKER_COMPOSE := docker compose
 DOCKER := docker
+API_PORT := 8000
+API_PREFIX := /api/v1
+DEV_USER_ID := 550e8400-e29b-41d4-a716-446655440000
 
 # =============================================================================
 # HELP
@@ -82,65 +85,67 @@ restart: ## Reiniciar todos os serviços
 	@echo "✅ All services restarted!"
 
 # =============================================================================
-# TESTING
+# LOCAL DEV (infra no Docker, app rodando local com uv — melhor p/ debugar o agente)
 # =============================================================================
-test: ## Executar todos os testes com Docker
-	@echo "🧪 Running all tests with Docker..."
-	@$(DOCKER_COMPOSE) exec app python test_phase4_simple.py
-	@$(DOCKER_COMPOSE) exec app python test_simple.py
-	@echo "✅ All tests completed!"
+infra: ## Subir APENAS postgres + redis (sem app)
+	@echo "🧱 Starting infra (postgres + redis)..."
+	@$(DOCKER_COMPOSE) up -d postgres redis
+	@echo "✅ Infra up. Postgres:5432  Redis:6379"
 
-test-phase2: ## Testar FASE 2 (Banco de dados)
-	@echo "🧪 Testing FASE 2 - Database..."
-	@$(DOCKER_COMPOSE) exec app python test_simple.py
-	@echo "✅ FASE 2 tests completed!"
+infra-stop: ## Parar a infra
+	@$(DOCKER_COMPOSE) stop postgres redis
 
-test-phase4: ## Testar FASE 4 (Gestão de clientes)
-	@echo "🧪 Testing FASE 4 - Client Management..."
-	@$(DOCKER_COMPOSE) exec app python test_phase4_simple.py
-	@echo "✅ FASE 4 tests completed!"
+migrate: ## Aplicar migrações Alembic (local, contra a infra)
+	@echo "🗄️ Applying migrations..."
+	@$(UV) run alembic upgrade head
 
-test-phase5: ## Testar FASE 5 (Agente de Intenções)
-	@echo "🧪 Testing FASE 5 - Intent Router..."
-	@$(DOCKER_COMPOSE) exec app uv run python test_phase5_simple_v2.py
-	@echo "✅ FASE 5 tests completed!"
+seed: ## Semear o usuário de dev fixo
+	@echo "🌱 Seeding dev user..."
+	@$(UV) run python scripts/seed_dev.py
 
-test-api: ## Testar API FastAPI
-	@echo "🧪 Testing API..."
-	@$(DOCKER_COMPOSE) exec app uv run python -c "from app.main import app; print('✅ API FastAPI carregada com sucesso!')"
-	@curl -f http://localhost:8000/health || echo "❌ API health check failed"
-	@echo "✅ API tests completed!"
+run: ## Rodar a API localmente com reload
+	@echo "🚀 uvicorn local em http://localhost:$(API_PORT)"
+	@$(UV) run uvicorn app.main:app --host 0.0.0.0 --port $(API_PORT) --reload
 
-test-db: ## Testar conexão com banco de dados
-	@echo "🧪 Testing database connection..."
+bootstrap: ## Setup completo p/ dev local: infra + migrate + seed
+	@make infra
+	@sleep 3
+	@make migrate
+	@make seed
+	@echo "🎉 Pronto. Rode 'make run' e depois 'make chat MSG=\"oi\"'."
+
+chat: ## Enviar uma mensagem ao agente (usage: make chat MSG="cadastra a Maria Silva, ...")
+	@curl -s -X POST http://localhost:$(API_PORT)$(API_PREFIX)/agent/message \
+		-H "Content-Type: application/json" \
+		-d '{"user_id": "$(DEV_USER_ID)", "message": "$(MSG)"}' | python3 -m json.tool
+
+psql: ## Shell psql na infra
+	@$(DOCKER_COMPOSE) exec postgres psql -U simplificapsi -d simplificapsi_dev
+
+redis: ## redis-cli na infra
+	@$(DOCKER_COMPOSE) exec redis redis-cli
+
+# =============================================================================
+# TESTING (pytest local via uv)
+# =============================================================================
+test: ## Executar toda a suíte (unit + integration)
+	@echo "🧪 Running pytest..."
+	@$(UV) run pytest
+
+test-unit: ## Apenas testes unitários
+	@$(UV) run pytest tests/unit/ -v
+
+test-integration: ## Apenas testes de integração
+	@$(UV) run pytest tests/integration/ -v
+
+test-cov: ## Testes com cobertura (HTML + terminal)
+	@$(UV) run pytest --cov=app --cov-report=html --cov-report=term -v
+
+test-db: ## Testar conexão com o banco
 	@$(DOCKER_COMPOSE) exec postgres psql -U simplificapsi -d simplificapsi_dev -c "SELECT 'Database connected!' as status;"
-	@echo "✅ Database tests completed!"
 
 test-redis: ## Testar conexão com Redis
-	@echo "🧪 Testing Redis connection..."
 	@$(DOCKER_COMPOSE) exec redis redis-cli ping
-	@echo "✅ Redis tests completed!"
-
-test-all: ## Executar todos os testes (FASE 2, FASE 4, API, DB, Redis)
-	@echo "🧪 Running comprehensive test suite..."
-	@make test-phase2
-	@make test-phase4
-	@make test-api
-	@make test-db
-	@make test-redis
-	@echo "🎉 All tests passed!"
-
-test-cov: ## Executar testes com cobertura (quando implementado)
-	@echo "🧪 Running tests with coverage..."
-	@$(DOCKER_COMPOSE) exec app uv run pytest tests/ --cov=app --cov-report=html --cov-report=term -v
-
-test-unit: ## Executar apenas testes unitários (quando implementado)
-	@echo "🧪 Running unit tests..."
-	@$(DOCKER_COMPOSE) exec app uv run pytest tests/unit/ -v
-
-test-integration: ## Executar apenas testes de integração (quando implementado)
-	@echo "🧪 Running integration tests..."
-	@$(DOCKER_COMPOSE) exec app uv run pytest tests/integration/ -v
 
 # =============================================================================
 # CODE QUALITY
@@ -322,17 +327,11 @@ api: ## Iniciar apenas a API (sem outros serviços)
 	@$(DOCKER_COMPOSE) up -d postgres redis
 	@$(DOCKER_COMPOSE) exec app uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-client-test: ## Testar funcionalidades de cliente
-	@echo "👤 Testing client functionality..."
-	@$(DOCKER_COMPOSE) exec app python test_phase4_simple.py
-
-quick-start: ## Início rápido - build, start, test
+quick-start: ## Início rápido (dev local): bootstrap + testes
 	@echo "⚡ Quick start - SimplificaPsi..."
-	@make docker-build
-	@make start
-	@sleep 5
-	@make test-all
-	@echo "🎉 Quick start completed!"
+	@make bootstrap
+	@make test
+	@echo "🎉 Quick start completed! Rode 'make run'."
 
 # =============================================================================
 # DEVELOPMENT HELPERS

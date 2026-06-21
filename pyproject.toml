@@ -23,85 +23,84 @@ classifiers = [
 ]
 
 dependencies = [
-    # Core AI Framework
-    "pydantic-ai>=0.0.14",
-    "pydantic>=2.5.0",
-    
+    # Core AI Framework (slim = lean; only the OpenAI provider, which also serves OpenRouter)
+    "pydantic-ai-slim[openai]>=1.41.0",
+    "pydantic>=2.12.0",
+    "openai>=2.14.0",
+
     # Web Framework
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+
     # Database
-    "sqlalchemy>=2.0.23",
-    "alembic>=1.13.0",
-    "psycopg2-binary>=2.9.9",
-    
-    # Cache & Session
-    "redis>=5.0.1",
-    "aioredis>=2.0.1",
-    
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14.0",
+    "psycopg2-binary>=2.9.10",
+
+    # Cache & Session (redis-py ships native async; aioredis is obsolete)
+    "redis>=6.2.0",
+
     # HTTP Client
-    "httpx>=0.25.2",
-    "aiohttp>=3.9.1",
-    
+    "httpx>=0.28.0",
+
     # Google Calendar Integration
-    "google-auth>=2.23.4",
-    "google-auth-oauthlib>=1.1.0",
+    "google-auth>=2.38.0",
+    "google-auth-oauthlib>=1.2.1",
     "google-auth-httplib2>=0.2.0",
-    "google-api-python-client>=2.108.0",
-    
-    # WhatsApp Integration
-    "python-multipart>=0.0.6",
-    
+    "google-api-python-client>=2.160.0",
+
+    # WhatsApp / multipart
+    "python-multipart>=0.0.20",
+
     # Environment & Config
-    "python-dotenv>=1.0.0",
-    "pydantic-settings>=2.1.0",
-    
+    "python-dotenv>=1.0.1",
+    "pydantic-settings>=2.12.0",
+
     # Logging & Monitoring
-    "structlog>=23.2.0",
-    "rich>=13.7.0",
-    
+    "structlog>=24.4.0",
+    "rich>=13.9.0",
+
     # Utilities
-    "python-dateutil>=2.8.2",
-    "pytz>=2023.3",
-    "phonenumbers>=8.13.25",
-    "email-validator>=2.1.0",
+    "python-dateutil>=2.9.0",
+    "phonenumbers>=8.13.50",
+    "email-validator>=2.2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     # Testing
-    "pytest>=7.4.3",
-    "pytest-asyncio>=0.21.1",
-    "pytest-cov>=4.1.0",
-    "pytest-mock>=3.12.0",
-    "httpx>=0.25.2",  # For testing FastAPI
-    
-    # Code Quality
-    "black>=23.11.0",
-    "ruff>=0.1.6",
-    "isort>=5.12.0",
-    "mypy>=1.7.1",
-    
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "httpx>=0.28.0",  # For testing FastAPI
+
+    # Agent evaluation harness (Plan 5)
+    "pydantic-evals>=1.41.0",
+
+    # Code Quality (ruff handles lint + format + import sorting; black/isort retired)
+    "ruff>=0.9.0",
+    "mypy>=1.14.0",
+
     # Pre-commit
-    "pre-commit>=3.6.0",
-    
+    "pre-commit>=4.0.0",
+
     # Development Tools
-    "ipython>=8.17.2",
-    "jupyter>=1.0.0",
+    "ipython>=8.30.0",
 ]
 
 test = [
-    "pytest>=7.4.3",
-    "pytest-asyncio>=0.21.1",
-    "pytest-cov>=4.1.0",
-    "pytest-mock>=3.12.0",
-    "httpx>=0.25.2",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "pydantic-evals>=1.41.0",
+    "httpx>=0.28.0",
 ]
 
 prod = [
-    "gunicorn>=21.2.0",
-    "sentry-sdk[fastapi]>=1.38.0",
+    "gunicorn>=23.0.0",
+    "sentry-sdk[fastapi]>=2.20.0",
 ]
 
 [project.urls]
@@ -116,50 +115,31 @@ simplifica-psi = "app.main:main"
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
-[tool.black]
-line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
 [tool.ruff]
 target-version = "py311"
-line-length = 88
+line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
     "F",  # pyflakes
-    "I",  # isort
+    "I",  # isort (import sorting)
     "B",  # flake8-bugbear
     "C4", # flake8-comprehensions
     "UP", # pyupgrade
 ]
 ignore = [
-    "E501",  # line too long, handled by black
-    "B008",  # do not perform function calls in argument defaults
+    "E501",  # line too long, handled by formatter
+    "B008",  # function calls in argument defaults (FastAPI Depends pattern)
     "C901",  # too complex
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["app"]
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -185,8 +165,9 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-minversion = "7.0"
+minversion = "8.0"
 addopts = "-ra -q --strict-markers --strict-config"
+asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
