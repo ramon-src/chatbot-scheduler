@@ -46,6 +46,9 @@ class User(Base):
     calendars = relationship("Calendar", back_populates="user", cascade="all, delete-orphan")
     events = relationship("Event", back_populates="user", cascade="all, delete-orphan")
     chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
+    google_credential = relationship(
+        "GoogleCredential", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
     
     # =============================================================================
     # METHODS
