@@ -90,7 +90,7 @@ restart: ## Reiniciar todos os serviços
 infra: ## Subir APENAS postgres + redis (sem app)
 	@echo "🧱 Starting infra (postgres + redis)..."
 	@$(DOCKER_COMPOSE) up -d postgres redis
-	@echo "✅ Infra up. Postgres:5432  Redis:6379"
+	@echo "✅ Infra up. Postgres:5433  Redis:6380 (host ports; container stays 5432/6379)"
 
 infra-stop: ## Parar a infra
 	@$(DOCKER_COMPOSE) stop postgres redis

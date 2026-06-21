@@ -18,7 +18,8 @@ services:
       POSTGRES_PASSWORD: simplificapsi123
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     ports:
-      - "5432:5432"
+      # host 5433 -> container 5432 (avoid colliding with a local Postgres on 5432)
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
@@ -38,7 +39,8 @@ services:
     container_name: simplificapsi_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # host 6380 -> container 6379 (avoid colliding with a local Redis on 6379)
+      - "6380:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
