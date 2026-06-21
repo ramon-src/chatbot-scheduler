@@ -59,6 +59,18 @@ def test_accent_and_case_insensitive_aliases():
     assert calculate_date_range("esta semana", NOW) == calculate_date_range("this_week", NOW)
 
 
+def test_this_month_december_rolls_to_january():
+    dec = datetime(2026, 12, 15, 9, 0, tzinfo=TZ)
+    start, end = calculate_date_range("this_month", dec)
+    assert start == datetime(2026, 12, 1, 0, 0, tzinfo=TZ)
+    assert end == datetime(2027, 1, 1, 0, 0, tzinfo=TZ)
+
+
+def test_accented_alias_input_is_normalized():
+    assert calculate_date_range("amanhã", NOW) == calculate_date_range("tomorrow", NOW)
+    assert calculate_date_range("próxima semana", NOW) == calculate_date_range("next_week", NOW)
+
+
 def test_unknown_period_raises():
     with pytest.raises(ValueError):
         calculate_date_range("yesterday", NOW)
