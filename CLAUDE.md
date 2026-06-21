@@ -130,7 +130,7 @@ make migration MESSAGE="add x"   # cria migração autogenerate
 
 ## 7. Pontos de atenção / dívidas conhecidas
 
-- **Dupla fonte de schema:** `scripts/init-db.sql` cria tabelas direto (bootstrap do docker) **e** existe Alembic. Tendência: migrar para **Alembic como fonte única**; `init-db.sql` deveria só criar extensão+schema+grants. Até lá, atenção a divergências (ex.: `clients.invoice_day`/`consult_price` são adicionados por migração e podem não existir no bootstrap antigo).
+- **Schema = Alembic (fonte única).** `scripts/init-db.sql` só prepara extensões + schema `simplificapsi` + grants; **tabelas/índices vêm das migrações** (`make migrate`) e o usuário de dev vem do `make seed`. Não recriar tabelas no `init-db.sql`.
 - **Legado mockado** (`workflow.py`, `agent_manager.py`, `calendar_agent.py`, `client_agent.py`) está marcado para remoção no Plano 1, Task 1.
 - **`phonenumbers` travado em `BR`** — multi-país é deferido.
 - **Regra herdada:** nome de cliente exige nome+sobrenome (≥2 palavras). Pode conflitar com uso conversacional ("cadastra a Maria"); revisitar se atrapalhar.
