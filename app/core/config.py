@@ -51,6 +51,17 @@ class Settings(BaseSettings):
     OPENAI_MAX_TOKENS: int = Field(default=4000, env="OPENAI_MAX_TOKENS")
     
     # =============================================================================
+    # OPENROUTER (fallback provider for LLM)
+    # =============================================================================
+    OPENROUTER_API_KEY: Optional[str] = Field(default=None, env="OPENROUTER_API_KEY")
+
+    # =============================================================================
+    # AGENT
+    # =============================================================================
+    SIMPLIFICA_AGENT_MODEL: str = Field(default="gpt-5.4-mini", env="SIMPLIFICA_AGENT_MODEL")
+    TIMEZONE: str = Field(default="America/Sao_Paulo", env="TIMEZONE")
+
+    # =============================================================================
     # GOOGLE CALENDAR
     # =============================================================================
     GOOGLE_CLIENT_ID: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_ID")
