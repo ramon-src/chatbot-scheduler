@@ -34,8 +34,8 @@ class Client(Base):
     email = Column(String(255), nullable=True, index=True)
     birth_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)
-    invoice_day = Column(Integer, nullable=True)
-    consult_price = Column(Numeric(10, 2), nullable=True)
+    invoice_day = Column(Integer, nullable=True)  # nullable at DB level for legacy/other write paths; ClientCreate requires it on create
+    consult_price = Column(Numeric(10, 2), nullable=True)  # nullable at DB level for legacy/other write paths; ClientCreate requires it on create
 
     # =============================================================================
     # STATUS

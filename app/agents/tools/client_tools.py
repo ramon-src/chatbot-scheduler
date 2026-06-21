@@ -79,8 +79,17 @@ async def list_clients_impl(deps: AgentDeps, active_only: bool = True) -> dict:
         deps.user_id, is_active=True if active_only else None, page=1, per_page=100
     )
     names = [c.name for c in page.clients]
-    return {"success": True, "data": {"names": names, "total": page.total},
-            "message": f"Você tem {page.total} cliente(s)."}
+    returned = len(names)
+    truncated = page.total > returned
+    if truncated:
+        message = f"Você tem {page.total} clientes. Mostrando os primeiros {returned}."
+    else:
+        message = f"Você tem {page.total} cliente(s)."
+    return {
+        "success": True,
+        "data": {"names": names, "total": page.total, "returned": returned, "truncated": truncated},
+        "message": message,
+    }
 
 
 async def update_client_impl(deps: AgentDeps, phone: str, **fields) -> dict:

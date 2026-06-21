@@ -24,7 +24,7 @@ REGRAS DE RESPOSTA:
 """
 
 
-def build_simplifica_agent() -> Agent:
+def build_simplifica_agent() -> Agent[AgentDeps, str]:
     agent = Agent(
         get_llm_model(settings.SIMPLIFICA_AGENT_MODEL, temperature=0.1, timeout=30),
         deps_type=AgentDeps,

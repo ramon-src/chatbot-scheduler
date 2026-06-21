@@ -10,6 +10,7 @@ from app.agents.tools.client_tools import (
     list_clients_impl,
     update_client_impl,
 )
+from app.core.exceptions import ConflictError
 
 def _deps_with_service(service):
     return SimpleNamespace(
@@ -73,6 +74,42 @@ async def test_deactivate_client_impl_success():
     assert result["success"] is True
     assert "Ana" in result["message"]
     service.deactivate_client.assert_awaited_once_with(client.id, deps.user_id)
+
+
+@pytest.mark.asyncio
+async def test_create_client_impl_conflict_error():
+    service = MagicMock()
+    service.create_client = AsyncMock(
+        side_effect=ConflictError("Já existe um cliente ativo com o telefone +5551981321543")
+    )
+    deps = _deps_with_service(service)
+
+    result = await create_client_impl(
+        deps, name="Maria Silva", phone="+5551981321543",
+        invoice_day=10, consult_price=200.0,
+    )
+
+    assert result["success"] is False
+    assert "Já existe um cliente ativo com o telefone +5551981321543" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_client_impl_validation_error_sanitized():
+    service = MagicMock()
+    service.create_client = AsyncMock()
+    deps = _deps_with_service(service)
+
+    # "X" fails ClientCreate validation (name requires ≥2 words / min length)
+    result = await create_client_impl(
+        deps, name="X", phone="+5551981321543",
+        invoice_day=10, consult_price=200.0,
+    )
+
+    assert result["success"] is False
+    assert result["message"].startswith("Não consegui validar os dados")
+    assert "ValidationError" not in result["message"]
+    assert "{" not in result["message"]
+    service.create_client.assert_not_awaited()
 
 
 @pytest.mark.asyncio
