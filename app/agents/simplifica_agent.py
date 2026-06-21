@@ -4,6 +4,7 @@ from pydantic_ai import Agent, RunContext
 
 from app.agents.deps import AgentDeps
 from app.agents.foundation import get_llm_model
+from app.agents.tools.calendar_tools import register_calendar_tools
 from app.agents.tools.client_tools import register_client_tools
 from app.core.config import settings
 
@@ -21,6 +22,11 @@ REGRAS DE RESPOSTA:
   ou ajude a refinar (ex.: vários homônimos -> peça o telefone).
 - Use as tools para qualquer ação ou consulta de dados. Nunca invente dados.
 - Para cadastrar cliente são necessários: nome e sobrenome, telefone, dia de cobrança e preço da consulta.
+- Agenda: você pode agendar compromissos únicos e recorrentes, listar por período e cancelar.
+  Um compromisso SEMPRE exige um cliente já cadastrado — se não existir, peça para cadastrar antes.
+  Datas e horas são relativas à "Data/hora atual" do contexto; converta "amanhã às 10h" para o
+  horário absoluto antes de chamar a tool. Períodos válidos para listar: hoje, amanhã, esta semana,
+  próxima semana, este mês.
 """
 
 
@@ -46,4 +52,5 @@ def build_simplifica_agent() -> Agent[AgentDeps, str]:
         return "\n".join(lines)
 
     register_client_tools(agent)
+    register_calendar_tools(agent)
     return agent
