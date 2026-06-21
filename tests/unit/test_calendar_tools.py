@@ -5,8 +5,6 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-import pytest
-
 from app.agents.deps import AgentDeps
 from app.agents.tools.calendar_tools import (
     _not_connected,

@@ -1,10 +1,10 @@
 """Agenda tools: pure impls + thin @agent.tool wrappers. Google Calendar is source of truth."""
 
 from datetime import datetime, timedelta
-from typing import Optional
 
 from app.agents.deps import AgentDeps
 from app.utils.date_range import calculate_date_range
+
 
 def _not_connected() -> dict:
     """Fresh graceful-degradation dict (avoid sharing a mutable module constant)."""
@@ -57,7 +57,7 @@ async def _resolve_client(deps: AgentDeps, client_name, client_phone):
 
 async def create_event_impl(
     deps: AgentDeps, *, client_name=None, client_phone=None,
-    start_time: datetime, duration_minutes: Optional[int] = None, title: Optional[str] = None,
+    start_time: datetime, duration_minutes: int | None = None, title: str | None = None,
 ) -> dict:
     if deps.calendar_service is None or deps.event_service is None:
         return _not_connected()
@@ -88,7 +88,7 @@ async def create_event_impl(
 async def create_recurring_event_impl(
     deps: AgentDeps, *, client_name=None, client_phone=None, start_time: datetime,
     frequency: str = "weekly", weekdays=None, until=None,
-    duration_minutes: Optional[int] = None, title: Optional[str] = None,
+    duration_minutes: int | None = None, title: str | None = None,
 ) -> dict:
     if deps.calendar_service is None or deps.event_service is None:
         return _not_connected()
@@ -139,7 +139,7 @@ async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
 
 async def cancel_event_impl(
     deps: AgentDeps, *, client_name=None, client_phone=None,
-    period: str = "this_week", reason: Optional[str] = None,
+    period: str = "this_week", reason: str | None = None,
 ) -> dict:
     if deps.calendar_service is None or deps.event_service is None:
         return _not_connected()
@@ -184,8 +184,8 @@ def register_calendar_tools(agent) -> None:
     @agent.tool
     async def create_event(
         ctx: RunContext[AgentDeps], start_time: str,
-        client_name: Optional[str] = None, client_phone: Optional[str] = None,
-        duration_minutes: Optional[int] = None, title: Optional[str] = None,
+        client_name: str | None = None, client_phone: str | None = None,
+        duration_minutes: int | None = None, title: str | None = None,
     ) -> dict:
         """Agenda um compromisso único. start_time em ISO 8601. Exige cliente já cadastrado."""
         return await create_event_impl(
@@ -197,9 +197,9 @@ def register_calendar_tools(agent) -> None:
     @agent.tool
     async def create_recurring_event(
         ctx: RunContext[AgentDeps], start_time: str,
-        client_name: Optional[str] = None, client_phone: Optional[str] = None,
-        weekdays: Optional[list[str]] = None, until: Optional[str] = None,
-        duration_minutes: Optional[int] = None, title: Optional[str] = None,
+        client_name: str | None = None, client_phone: str | None = None,
+        weekdays: list[str] | None = None, until: str | None = None,
+        duration_minutes: int | None = None, title: str | None = None,
     ) -> dict:
         """Agenda sessões recorrentes semanais. start_time/until em ISO 8601. weekdays como ['TU','TH']."""
         return await create_recurring_event_impl(
@@ -216,8 +216,8 @@ def register_calendar_tools(agent) -> None:
 
     @agent.tool
     async def cancel_event(
-        ctx: RunContext[AgentDeps], client_name: Optional[str] = None,
-        client_phone: Optional[str] = None, period: str = "this_week", reason: Optional[str] = None,
+        ctx: RunContext[AgentDeps], client_name: str | None = None,
+        client_phone: str | None = None, period: str = "this_week", reason: str | None = None,
     ) -> dict:
         """Cancela o compromisso de um cliente num período. Exige cliente cadastrado."""
         return await cancel_event_impl(
