@@ -25,6 +25,7 @@ Visão completa do produto/domínio: `../simplifica-psi-chatbot/PROJECT_OVERVIEW
 3. **Não usar MCP de Google** — usar o SDK oficial (`google-api-python-client`) atrás de um wrapper fino. Motivo: auth multi-tenant por-usuário, guard-rails de negócio na tool, dual-write Postgres, superfície de tools enxuta.
 4. **Fundação de LLM portada do `rooster-platform`** (do Bruno): `get_llm_model()` retorna um `FallbackModel` (cadeia OpenAI→OpenRouter→menor) — resiliência de provedor de graça. Ver `app/agents/foundation/llm.py`.
 5. **Escolha do modelo principal é por eval**, não por achismo (candidatos: `claude-haiku-4.5`, `gpt-5.4-mini`).
+6. **Ingestão de mensagens é provider-agnostic** (Plano 4): uma porta única (`InboundMessage`) com adapters que normalizam **Evolution API** e **WhatsApp Oficial (Meta Cloud API)** para um formato interno comum. O agente nunca conhece o provedor de origem; trocar/adicionar provedor é só um adapter novo. O mesmo vale para o envio (porta de saída).
 
 Spec: `docs/superpowers/specs/2026-06-21-simplifica-agent-system-design.md`
 Plano atual: `docs/superpowers/plans/2026-06-21-foundation-and-clients-slice.md`
