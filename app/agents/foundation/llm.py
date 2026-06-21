@@ -1,3 +1,5 @@
+import os
+
 from typing import Dict, Any, Tuple, Optional
 
 from pydantic_ai.models.fallback import FallbackModel
@@ -7,6 +9,27 @@ from pydantic_ai.models.openrouter import (
     OpenRouterModelSettings,
     OpenRouterProviderConfig,
 )
+
+
+def _make_openrouter(*args: Any, **kwargs: Any) -> Optional[OpenRouterModel]:
+    """Build an OpenRouterModel, or return None when no OPENROUTER_API_KEY is set.
+
+    The OpenRouter provider validates its API key at construction time, so we
+    skip these models entirely when no key is available — the FallbackModel then
+    falls back to the OpenAI-only entries. This lets the same model aliases work
+    for users who only have an OpenAI key.
+    """
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        return None
+    return OpenRouterModel(*args, **kwargs)
+
+
+def _fallback(*models: Any) -> FallbackModel:
+    """Build a FallbackModel, dropping any None entries (skipped OpenRouter models)."""
+    usable = [m for m in models if m is not None]
+    if not usable:
+        raise ValueError("get_llm_model: no usable models (missing provider credentials)")
+    return FallbackModel(*usable)
 
 
 def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) -> FallbackModel:
@@ -59,7 +82,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
     )
 
     if model_name == "gpt-5.4":
-        model = FallbackModel(
+        model = _fallback(
             OpenAIChatModel(
                 "gpt-5.4-2026-03-05",
                 settings=OpenAIChatModelSettings(
@@ -68,7 +91,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "openai/gpt-5.4",
                 settings=OpenRouterModelSettings(
                     timeout=timeout,
@@ -80,7 +103,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-5.4-mini":
-        model = FallbackModel(
+        model = _fallback(
             OpenAIChatModel(
                 "gpt-5.4-mini-2026-03-17",
                 settings=OpenAIChatModelSettings(
@@ -89,7 +112,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "openai/gpt-5.4-mini",
                 settings=OpenRouterModelSettings(
                     timeout=timeout,
@@ -101,7 +124,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-5.2":
-        model = FallbackModel(
+        model = _fallback(
             OpenAIChatModel(
                 "gpt-5.2-2025-12-11",
                 settings=OpenAIChatModelSettings(
@@ -116,7 +139,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-5.1":
-        model = FallbackModel(
+        model = _fallback(
             OpenAIChatModel(
                 "gpt-5.1-2025-11-13",
                 settings=OpenAIChatModelSettings(
@@ -131,8 +154,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-5-mini-openrouter":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "openai/gpt-5-mini",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": "minimal"},
@@ -141,7 +164,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "google/gemini-3.1-flash-lite",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": None},
@@ -161,8 +184,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-5.4-nano-openrouter":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "openai/gpt-5.4-nano",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": "minimal"},
@@ -171,7 +194,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "google/gemini-3.1-flash-lite",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": None},
@@ -180,7 +203,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "openai/gpt-5-mini",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": "minimal"},
@@ -208,7 +231,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-5-mini":
-        model = FallbackModel(
+        model = _fallback(
             OpenAIChatModel(
                 "gpt-5-mini-2025-08-07",
                 settings=OpenAIChatModelSettings(
@@ -219,7 +242,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "openai/gpt-5-mini",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": "minimal"},
@@ -228,7 +251,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "openai/gpt-4.1-mini",
                 settings=OpenRouterModelSettings(
                     timeout=timeout,
@@ -239,7 +262,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-5.4-nano":
-        model = FallbackModel(
+        model = _fallback(
             OpenAIChatModel(
                 "gpt-5.4-nano",
                 settings=OpenAIChatModelSettings(
@@ -252,8 +275,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-oss-120b":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "openai/gpt-oss-120b",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": "low"},
@@ -267,8 +290,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-oss-20b":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "openai/gpt-oss-20b",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": "low"},
@@ -282,8 +305,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-oss-safeguard-20b":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "openai/gpt-oss-safeguard-20b",
                 settings=OpenRouterModelSettings(
                     timeout=timeout,
@@ -295,7 +318,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gpt-4.1-mini":
-        model = FallbackModel(
+        model = _fallback(
             OpenAIChatModel(
                 "gpt-4.1-mini-2025-04-14",
                 settings=OpenAIChatModelSettings(
@@ -308,8 +331,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "claude-haiku-4.5":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "anthropic/claude-haiku-4.5",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": None},
@@ -322,8 +345,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "claude-sonnet-4.6":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "anthropic/claude-sonnet-4.6",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": None},
@@ -336,8 +359,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "claude-opus-4.6":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "anthropic/claude-opus-4.6",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": None},
@@ -350,8 +373,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gemini-3.1-pro-preview":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "google/gemini-3.1-pro-preview",
                 settings=OpenRouterModelSettings(
                     timeout=timeout,
@@ -363,8 +386,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gemini-3.1-flash-lite-preview":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "google/gemini-3.1-flash-lite",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": None},
@@ -373,7 +396,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "openai/gpt-5.4-nano",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": "minimal"},
@@ -382,7 +405,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
                     seed=0,
                 ),
             ),
-            OpenRouterModel(
+            _make_openrouter(
                 "openai/gpt-5.4-mini",
                 settings=OpenRouterModelSettings(
                     timeout=timeout,
@@ -394,8 +417,8 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
         )
 
     elif model_name == "gemini-3-flash-preview":
-        model = FallbackModel(
-            OpenRouterModel(
+        model = _fallback(
+            _make_openrouter(
                 "google/gemini-3-flash-preview",
                 settings=OpenRouterModelSettings(
                     openrouter_reasoning={"effort": None},
@@ -409,7 +432,7 @@ def get_llm_model(model_name: str, temperature: float = 0.3, timeout: int = 30) 
 
     else:
         # Unknown model: fall back to gpt-4.1-mini chain
-        model = FallbackModel(
+        model = _fallback(
             OpenAIChatModel(
                 "gpt-4.1-mini-2025-04-14",
                 settings=OpenAIChatModelSettings(

@@ -2,7 +2,7 @@
 Schemas Pydantic para Client
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -229,11 +229,11 @@ class ClientResponse(ClientBase):
         ...,
         description="ID do psicólogo proprietário"
     )
-    created_at: date = Field(
+    created_at: datetime = Field(
         ...,
         description="Data de criação do cliente"
     )
-    updated_at: date = Field(
+    updated_at: datetime = Field(
         ...,
         description="Data da última atualização"
     )

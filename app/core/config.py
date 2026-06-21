@@ -3,8 +3,7 @@ Application configuration using Pydantic Settings
 """
 
 import os
-from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
@@ -191,4 +190,13 @@ class Settings(BaseSettings):
 # GLOBAL SETTINGS INSTANCE
 # =============================================================================
 settings = Settings()
+
+# Bridge credentials from settings (.env) into the process environment so
+# third-party SDKs (OpenAI / OpenRouter) that read os.environ directly can
+# find them. pydantic-settings only populates the `settings` object, not the
+# OS env, so without this the LLM clients fail with "Missing credentials".
+for _cred_key in ("OPENAI_API_KEY", "OPENROUTER_API_KEY"):
+    _cred_val = getattr(settings, _cred_key, None)
+    if _cred_val:
+        os.environ.setdefault(_cred_key, _cred_val)
 
