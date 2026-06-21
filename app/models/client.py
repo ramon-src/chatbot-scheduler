@@ -2,7 +2,7 @@
 Client model for SQLAlchemy
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, Text, Date, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, Text, Date, ForeignKey, Integer, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -34,7 +34,9 @@ class Client(Base):
     email = Column(String(255), nullable=True, index=True)
     birth_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)
-    
+    invoice_day = Column(Integer, nullable=True)
+    consult_price = Column(Numeric(10, 2), nullable=True)
+
     # =============================================================================
     # STATUS
     # =============================================================================
