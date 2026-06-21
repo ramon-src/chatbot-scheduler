@@ -21,6 +21,9 @@ DEV_USER_ID = UUID("550e8400-e29b-41d4-a716-446655440000")
 
 def main() -> None:
     user_id = UUID(sys.argv[1]) if len(sys.argv) > 1 else DEV_USER_ID
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise SystemExit("Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env primeiro.")
+
     client_config = {
         "installed": {
             "client_id": settings.GOOGLE_CLIENT_ID,
@@ -30,8 +33,6 @@ def main() -> None:
             "redirect_uris": ["http://localhost"],
         }
     }
-    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
-        raise SystemExit("Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env primeiro.")
 
     flow = InstalledAppFlow.from_client_config(client_config, scopes=settings.GOOGLE_SCOPES)
     creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")

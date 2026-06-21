@@ -70,6 +70,7 @@ def test_load_refreshes_and_persists_when_expired(monkeypatch):
             self.token = "new-access-token"
             self.expired = False
             self.valid = True
+            self.expiry = "2026-12-31T00:00:00"
 
     monkeypatch.setattr(google_auth, "Credentials", FakeCreds)
     monkeypatch.setattr(google_auth, "Request", lambda: object())
@@ -78,4 +79,24 @@ def test_load_refreshes_and_persists_when_expired(monkeypatch):
     creds = load_credentials(db, uuid4())
     assert creds.token == "new-access-token"
     assert row.token == "new-access-token"  # persisted back to the row
+    assert row.expiry == "2026-12-31T00:00:00"  # expiry persisted too
     db.commit.assert_called_once()
+
+
+def test_load_wraps_refresh_failure_as_domain_error(monkeypatch):
+    """A google refresh exception must surface as GoogleAuthError, never leak raw."""
+    class FakeCreds:
+        def __init__(self, token=None, **kw):
+            self.token = token
+            self.expired = True
+            self.valid = False
+
+        def refresh(self, request):
+            raise RuntimeError("invalid_grant: token revoked")
+
+    monkeypatch.setattr(google_auth, "Credentials", FakeCreds)
+    monkeypatch.setattr(google_auth, "Request", lambda: object())
+    db = _db_returning(_fake_row())
+    with pytest.raises(GoogleAuthError):
+        load_credentials(db, uuid4())
+    db.commit.assert_not_called()
