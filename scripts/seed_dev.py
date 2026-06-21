@@ -11,6 +11,7 @@ exercised right away:
 from uuid import UUID
 
 from app.core.database import SessionLocal
+from app.models.calendar import Calendar
 from app.models.user import User
 
 DEV_USER_ID = UUID("550e8400-e29b-41d4-a716-446655440000")
@@ -25,18 +26,30 @@ def seed_dev_user() -> None:
         existing = db.get(User, DEV_USER_ID)
         if existing:
             print(f"✅ Dev user already present: {DEV_USER_ID}")
-            return
+        else:
+            user = User(
+                id=DEV_USER_ID,
+                email=DEV_USER_EMAIL,
+                name=DEV_USER_NAME,
+                phone=DEV_USER_PHONE,
+                is_active=True,
+            )
+            db.add(user)
+            db.commit()
+            print(f"✅ Dev user created: {DEV_USER_ID} ({DEV_USER_EMAIL})")
 
-        user = User(
-            id=DEV_USER_ID,
-            email=DEV_USER_EMAIL,
-            name=DEV_USER_NAME,
-            phone=DEV_USER_PHONE,
-            is_active=True,
-        )
-        db.add(user)
-        db.commit()
-        print(f"✅ Dev user created: {DEV_USER_ID} ({DEV_USER_EMAIL})")
+        existing_cal = db.query(Calendar).filter(
+            Calendar.user_id == DEV_USER_ID, Calendar.is_primary == True  # noqa: E712
+        ).first()
+        if existing_cal is None:
+            db.add(Calendar(
+                user_id=DEV_USER_ID, name="Principal",
+                google_calendar_id="primary", is_primary=True, is_active=True,
+            ))
+            db.commit()
+            print(f"✅ Primary calendar seeded for dev user: {DEV_USER_ID}")
+        else:
+            print(f"✅ Primary calendar already present for dev user: {DEV_USER_ID}")
     except Exception as exc:  # pragma: no cover - dev convenience script
         db.rollback()
         raise SystemExit(f"❌ Failed to seed dev user: {exc}") from exc
