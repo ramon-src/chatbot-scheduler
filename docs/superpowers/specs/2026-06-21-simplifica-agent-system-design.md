@@ -154,6 +154,9 @@ Sem favorito comprometido. Usando o catálogo já wired do `rooster-platform`:
 ## 10. Fases de construção (ordem por dependência)
 
 1. **Fundação:** portar `get_llm_model` (FallbackModel) + `get_llm_run_metadata`; esqueleto `SimplificaAgent` + `AgentDeps`; webhook + debouncer; memória de sessão.
+
+> **Ingestão provider-agnostic (decisão):** o recebimento de mensagens usa uma porta única `InboundMessage` com adapters que normalizam **Evolution API** e **WhatsApp Oficial (Meta Cloud API)** para um formato interno comum. O agente nunca conhece o provedor; adicionar/trocar provedor é só um adapter. Porta de saída análoga para o envio. (Implementado no Plano 4.)
+
 2. **Clientes:** `client_tools` reais sobre `client_service` (substituir mocks).
 3. **Agenda:** `google_calendar_service` (auth OAuth + API) + `calendar_tools` + `calculate_date_range`.
 4. **Cobrança:** `billing_tools` + integração simple-charge/Evolution.

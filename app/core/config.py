@@ -3,8 +3,7 @@ Application configuration using Pydantic Settings
 """
 
 import os
-from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
@@ -50,6 +49,17 @@ class Settings(BaseSettings):
     OPENAI_TEMPERATURE: float = Field(default=0.7, env="OPENAI_TEMPERATURE")
     OPENAI_MAX_TOKENS: int = Field(default=4000, env="OPENAI_MAX_TOKENS")
     
+    # =============================================================================
+    # OPENROUTER (fallback provider for LLM)
+    # =============================================================================
+    OPENROUTER_API_KEY: Optional[str] = Field(default=None, env="OPENROUTER_API_KEY")
+
+    # =============================================================================
+    # AGENT
+    # =============================================================================
+    SIMPLIFICA_AGENT_MODEL: str = Field(default="gpt-5.4-mini", env="SIMPLIFICA_AGENT_MODEL")
+    TIMEZONE: str = Field(default="America/Sao_Paulo", env="TIMEZONE")
+
     # =============================================================================
     # GOOGLE CALENDAR
     # =============================================================================
@@ -174,9 +184,19 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"  # tolerate unknown keys in .env (don't crash on stray vars)
 
 # =============================================================================
 # GLOBAL SETTINGS INSTANCE
 # =============================================================================
 settings = Settings()
+
+# Bridge credentials from settings (.env) into the process environment so
+# third-party SDKs (OpenAI / OpenRouter) that read os.environ directly can
+# find them. pydantic-settings only populates the `settings` object, not the
+# OS env, so without this the LLM clients fail with "Missing credentials".
+for _cred_key in ("OPENAI_API_KEY", "OPENROUTER_API_KEY"):
+    _cred_val = getattr(settings, _cred_key, None)
+    if _cred_val:
+        os.environ.setdefault(_cred_key, _cred_val)
 

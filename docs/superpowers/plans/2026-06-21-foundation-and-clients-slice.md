@@ -940,7 +940,7 @@ Expected: push aceito (remote `main` atualizado).
 
 - **Plano 2 — Agenda (Google Calendar):** `google_calendar_service` (OAuth por-usuário + SDK oficial `google-api-python-client`), `calculate_date_range`, tools `create_event`/`create_recurring_event`/`list_events`/`update_event`/`cancel_event`, persistência de `google_event_id` no Postgres, regra "evento exige cliente existente".
 - **Plano 3 — Cobrança:** tools `mark_paid`/`list_pending_payments`/`send_payment_reminder`, integração simple-charge/Evolution.
-- **Plano 4 — Memória de sessão + WhatsApp:** persistência de `ChatSession`/`Message`, resumo contínuo barato (N=10/X=6), debounce Redis, webhook Evolution API.
+- **Plano 4 — Memória de sessão + WhatsApp:** persistência de `ChatSession`/`Message`, resumo contínuo barato (N=10/X=6), debounce Redis. **Ingestão provider-agnostic:** porta `InboundMessage` + adapters **Evolution API** e **WhatsApp Oficial (Meta Cloud API)** que normalizam para um formato interno comum (o agente não conhece o provedor); porta de saída análoga para envio.
 - **Plano 5 — Eval & escolha de modelo:** eval-set (~20 conversas), métricas de tool-calling/qualidade/custo/latência, fixar primário/fallback.
 - **Plano 6 — Fiscal (Receita Saúde):** tools `issue_receipt`/`issue_invoice`.
 

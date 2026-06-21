@@ -81,6 +81,8 @@ class ClientService:
                 birth_date=client_data.birth_date,
                 notes=client_data.notes,
                 is_active=client_data.is_active,
+                invoice_day=client_data.invoice_day,
+                consult_price=client_data.consult_price,
             )
             
             self.db.add(client)
