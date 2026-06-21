@@ -65,6 +65,38 @@ def test_list_events_normalizes_items():
     assert events.list.call_args.kwargs["orderBy"] == "startTime"
 
 
+def test_list_events_all_day_node_is_timezone_aware():
+    events = MagicMock()
+    events.list.return_value.execute.return_value = {
+        "items": [
+            {"id": "allday", "summary": "Bloqueio",
+             "start": {"date": "2026-06-22"}, "end": {"date": "2026-06-23"}},
+        ]
+    }
+    svc = _service_with_events(events)
+    out = svc.list_events(datetime(2026, 6, 22, tzinfo=TZ), datetime(2026, 6, 23, tzinfo=TZ))
+    assert out[0]["start"].tzinfo is not None  # naive dates anchored to service tz
+    assert out[0]["end"].tzinfo is not None
+
+
+def test_update_event_patches_only_changed_fields():
+    events = MagicMock()
+    events.patch.return_value.execute.return_value = {"id": "evt7", "htmlLink": "u"}
+    svc = _service_with_events(events)
+    out = svc.update_event(
+        "evt7", summary="Novo título", start=datetime(2026, 6, 22, 14, 0, tzinfo=TZ)
+    )
+    assert out["id"] == "evt7"
+    kwargs = events.patch.call_args.kwargs
+    assert kwargs["calendarId"] == "primary"
+    assert kwargs["eventId"] == "evt7"
+    body = kwargs["body"]
+    assert body["summary"] == "Novo título"
+    assert body["start"]["dateTime"].startswith("2026-06-22T14:00:00")
+    assert body["start"]["timeZone"] == "America/Sao_Paulo"
+    assert "end" not in body  # unchanged field not sent
+
+
 def test_cancel_event_deletes():
     events = MagicMock()
     svc = _service_with_events(events)

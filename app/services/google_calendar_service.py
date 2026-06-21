@@ -1,6 +1,7 @@
 """Thin wrapper over the Google Calendar v3 API resource (injected)."""
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 
 class GoogleCalendarService:
@@ -12,14 +13,20 @@ class GoogleCalendarService:
     def _dt(self, value: datetime) -> dict:
         return {"dateTime": value.isoformat(), "timeZone": self._tz}
 
-    @staticmethod
-    def _parse(node: dict) -> datetime:
-        raw = node.get("dateTime") or node.get("date")
-        return datetime.fromisoformat(raw)
+    def _parse(self, node: dict) -> datetime:
+        """Parse a GCal start/end node to a timezone-aware datetime.
+
+        `dateTime` nodes carry an offset; all-day `date` nodes are naive, so we
+        anchor them to the service timezone at midnight to keep the aware contract.
+        """
+        if node.get("dateTime"):
+            return datetime.fromisoformat(node["dateTime"])
+        parsed = datetime.fromisoformat(node["date"])
+        return parsed.replace(tzinfo=ZoneInfo(self._tz))
 
     def create_event(self, summary, start, end, description=None, recurrence=None) -> dict:
         body = {"summary": summary, "start": self._dt(start), "end": self._dt(end)}
-        if description:
+        if description is not None:
             body["description"] = description
         if recurrence:
             body["recurrence"] = recurrence
