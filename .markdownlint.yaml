@@ -1,0 +1,31 @@
+# =============================================================================
+# SIMPLIFICAPSI - MARKDOWNLINT CONFIGURATION
+# =============================================================================
+
+# Enable all rules by default
+default: true
+
+# Line length
+MD013:
+  line_length: 120
+  code_blocks: false
+  tables: false
+
+# Headers
+MD022: false  # Headers should be surrounded by blank lines
+MD025: false  # Multiple top-level headers in the same document
+
+# Lists
+MD029: false  # Ordered list item prefix
+MD030: false  # Spaces after list markers
+
+# Code
+MD040: false  # Fenced code blocks should have a language specified
+MD041: false  # First line in file should be a top-level header
+
+# Links
+MD033: false  # Inline HTML
+
+# Tables
+MD013:
+  tables: false
