@@ -1,4 +1,3 @@
-import os
 import pytest
 from pydantic_ai.models.fallback import FallbackModel
 from app.agents.foundation import get_llm_model

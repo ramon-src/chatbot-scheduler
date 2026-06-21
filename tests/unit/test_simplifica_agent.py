@@ -4,14 +4,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from pydantic_ai import models
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.messages import ModelResponse, ToolCallPart, TextPart
 
 from app.agents.simplifica_agent import build_simplifica_agent, SIMPLIFICA_SYSTEM_PROMPT
 from app.agents.deps import AgentDeps
-
-models.ALLOW_MODEL_REQUESTS = False  # guard: no real network
 
 
 def _noop_model(messages, info):

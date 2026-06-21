@@ -1,6 +1,5 @@
 from typing import Dict, Any, Tuple, Optional
 
-from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 from pydantic_ai.models.openrouter import (

@@ -1,11 +1,8 @@
 # tests/integration/test_agent_message_endpoint.py
-import pytest
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from pydantic_ai import models
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.messages import ModelResponse, TextPart
 
@@ -13,8 +10,6 @@ from app.main import app
 from app.api import agent_routes
 from app.core.config import settings
 from app.core.database import get_db
-
-models.ALLOW_MODEL_REQUESTS = False
 
 # Placeholder model for agent construction (never called at request time)
 def _noop_model(messages, info):
