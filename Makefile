@@ -11,7 +11,7 @@ PYTHON := python3.11
 UV := uv
 DOCKER_COMPOSE := docker compose
 DOCKER := docker
-API_PORT := 8000
+API_PORT := 8010
 API_PREFIX := /api/v1
 DEV_USER_ID := 550e8400-e29b-41d4-a716-446655440000
 
@@ -60,7 +60,7 @@ remove: ## Remover dependência (usage: make remove PACKAGE=package_name)
 dev: ## Rodar em modo desenvolvimento com Docker
 	@echo "🔥 Starting development server with Docker..."
 	@$(DOCKER_COMPOSE) up -d
-	@echo "✅ Services started! API available at http://localhost:8000"
+	@echo "✅ Services started! API available at http://localhost:8010"
 	@echo "📋 Use 'make logs' to see logs or 'make stop' to stop services"
 
 dev-debug: ## Rodar em modo desenvolvimento com debug
@@ -313,7 +313,7 @@ health: ## Verificar saúde de todos os serviços
 	@$(DOCKER_COMPOSE) ps
 	@echo ""
 	@echo "🌐 API Health:"
-	@curl -s http://localhost:8000/health || echo "❌ API not responding"
+	@curl -s http://localhost:8010/health || echo "❌ API not responding"
 	@echo ""
 	@echo "🗄️ Database Health:"
 	@$(DOCKER_COMPOSE) exec postgres psql -U simplificapsi -d simplificapsi_dev -c "SELECT 'Database OK' as status;" 2>/dev/null || echo "❌ Database not responding"
@@ -351,7 +351,7 @@ status: ## Mostrar status do projeto
 	@git status --short
 	@echo ""
 	@echo "API status:"
-	@curl -s http://localhost:8000/health 2>/dev/null || echo "API not running"
+	@curl -s http://localhost:8010/health 2>/dev/null || echo "API not running"
 
 deps: ## Mostrar dependências
 	@echo "📦 Project Dependencies:"

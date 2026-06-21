@@ -100,7 +100,7 @@ make stop
 make infra          # sobe APENAS postgres + redis
 make migrate        # aplica migrações Alembic (local, contra a infra)
 make seed           # garante o usuário de dev (UUID abaixo)
-make run            # uvicorn local com reload em http://localhost:8000
+make run            # uvicorn local com reload em http://localhost:8010
 ```
 
 Testar rápido o agente (sem WhatsApp): o endpoint `POST /api/v1/agent/message`:
