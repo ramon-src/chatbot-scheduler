@@ -2,7 +2,7 @@
 Calendar model for SQLAlchemy
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -12,9 +12,14 @@ from app.core.database import Base
 
 class Calendar(Base):
     """Calendar model"""
-    
+
     __tablename__ = "calendars"
-    __table_args__ = {"schema": "simplificapsi"}
+    # google_calendar_id (e.g. the literal "primary") is unique PER USER, not
+    # globally — every user's own primary calendar is identified as "primary".
+    __table_args__ = (
+        UniqueConstraint("user_id", "google_calendar_id", name="uq_calendars_user_google_id"),
+        {"schema": "simplificapsi"},
+    )
     
     # =============================================================================
     # PRIMARY KEY
@@ -30,7 +35,7 @@ class Calendar(Base):
     # BASIC INFO
     # =============================================================================
     name = Column(String(255), nullable=False)
-    google_calendar_id = Column(String(255), nullable=True, unique=True, index=True)
+    google_calendar_id = Column(String(255), nullable=True, index=True)
     
     # =============================================================================
     # STATUS

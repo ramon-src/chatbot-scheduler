@@ -6,7 +6,9 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.core.database import SessionLocal
+from app.models.calendar import Calendar
 from app.models.event import Event, EventStatus
+from app.models.user import User
 from app.services.event_service import EventService
 
 TZ = ZoneInfo("America/Sao_Paulo")
@@ -52,3 +54,20 @@ def test_cancel_event_sets_status(db):
     )
     cancelled = svc.cancel_event(ev)
     assert cancelled.status == EventStatus.CANCELLED.value
+
+
+def test_two_users_can_each_have_primary_calendar(db):
+    """Regression: google_calendar_id='primary' is unique PER USER, not globally.
+    Before the composite-unique fix this second insert raised IntegrityError."""
+    second_user_id = UUID("550e8400-e29b-41d4-a716-446655440099")
+    db.add(User(id=second_user_id, email="second-user-test@example.com", name="Second Test"))
+    db.commit()
+    try:
+        EventService(db).get_primary_calendar(DEV_USER_ID)  # dev user primary
+        cal2 = EventService(db).get_primary_calendar(second_user_id)  # must not collide
+        assert cal2.google_calendar_id == "primary"
+        assert cal2.user_id == second_user_id
+    finally:
+        db.query(Calendar).filter(Calendar.user_id == second_user_id).delete(synchronize_session=False)
+        db.query(User).filter(User.id == second_user_id).delete(synchronize_session=False)
+        db.commit()
