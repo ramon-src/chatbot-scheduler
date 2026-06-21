@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
+from app.api.agent_routes import router as agent_router
 
 # Setup logging
 setup_logging()
@@ -62,6 +63,11 @@ async def root():
 # =============================================================================
 # APPLICATION LIFECYCLE
 # =============================================================================
+# =============================================================================
+# ROUTERS
+# =============================================================================
+app.include_router(agent_router, prefix=settings.API_PREFIX)
+
 @app.on_event("startup")
 async def startup_event():
     """Application startup event"""
