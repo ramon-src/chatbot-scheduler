@@ -15,6 +15,8 @@ from app.core.exceptions import ConflictError
 from app.models.lead import Lead
 from app.models.user import User
 
+_VALID_LEAD_STATUS = {"new", "engaged", "qualified", "converted"}
+
 
 class LeadService:
     def __init__(self, db: Session):
@@ -46,7 +48,7 @@ class LeadService:
             lead.email = email
         if notes is not None:
             lead.notes = notes
-        if status is not None:
+        if status is not None and status in _VALID_LEAD_STATUS:
             lead.status = status
         self.db.commit()
         self.db.refresh(lead)
@@ -79,6 +81,7 @@ class LeadService:
                 else None
             )
             if existing is not None:
+                lead = self.db.merge(lead)
                 self._mark_converted(lead, existing.id)
                 return existing, False
             raise ConflictError("Já existe uma conta com esse e-mail.")
