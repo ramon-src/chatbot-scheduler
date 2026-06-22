@@ -5,6 +5,7 @@ from uuid import UUID
 
 from dateutil.rrule import rrulestr
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.calendar import Calendar
@@ -107,7 +108,7 @@ class EventService:
 
     def find_client_session_on_date(self, user_id: UUID, client_id, day: date) -> Event | None:
         from sqlalchemy import Date as SqlDate
-        from sqlalchemy import cast
+        from sqlalchemy import cast, func
         return self.db.query(Event).filter(
             and_(
                 Event.user_id == user_id,
@@ -116,7 +117,7 @@ class EventService:
                 ~and_(Event.is_recurring == True, Event.parent_event_id.is_(None)),  # noqa: E712
                 or_(
                     Event.occurrence_date == day,
-                    cast(Event.start_time, SqlDate) == day,
+                    cast(func.timezone('America/Sao_Paulo', Event.start_time), SqlDate) == day,
                 ),
             )
         ).order_by(Event.start_time).first()
@@ -137,6 +138,15 @@ class EventService:
             )
         ).all()
 
+    def _materialized_dates(self, template_id) -> set:
+        """Return the set of occurrence_date values already persisted for a template."""
+        return {
+            row.occurrence_date
+            for row in self.db.query(Event.occurrence_date).filter(
+                Event.parent_event_id == template_id
+            )
+        }
+
     def ensure_occurrences(self, user_id: UUID, range_start: datetime, range_end: datetime) -> int:
         """Idempotently materialize per-occurrence rows for the user's recurring
         series within [range_start, range_end]. Returns the number created."""
@@ -147,12 +157,7 @@ class EventService:
                 continue
             rule = rrulestr(rule_text, dtstart=template.start_time)
             duration = template.end_time - template.start_time
-            existing = {
-                row.occurrence_date
-                for row in self.db.query(Event.occurrence_date).filter(
-                    Event.parent_event_id == template.id
-                )
-            }
+            existing = self._materialized_dates(template.id)
             client = self.db.get(Client, template.client_id) if template.client_id else None
             fallback_price = client.consult_price if client is not None else None
             for occ_start in rule.between(range_start, range_end, inc=True):
@@ -175,5 +180,11 @@ class EventService:
                 existing.add(occ_date)
                 created += 1
         if created:
-            self.db.commit()
+            try:
+                self.db.commit()
+            except IntegrityError:
+                # A concurrent materialization won the race; the occurrences now
+                # exist. Roll back our losing insert batch and report none created.
+                self.db.rollback()
+                return 0
         return created

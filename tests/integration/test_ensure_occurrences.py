@@ -81,3 +81,61 @@ def test_respects_until(seeded):
     created = svc.ensure_occurrences(DEV_USER_ID, start, start + timedelta(days=28))
     # only 2026-07-07 and 2026-07-14 fall on/before the UNTIL
     assert created == 2
+
+
+def test_concurrent_insert_swallows_integrity_error(seeded, monkeypatch):
+    """Prove that an IntegrityError from a race-condition duplicate insert is
+    swallowed, not propagated.
+
+    Strategy:
+    1. Pre-insert the first occurrence row via a *separate* committed session so it
+       already exists in the DB.
+    2. Monkeypatch `_materialized_dates` on the service instance to return an empty
+       set, forcing the service to attempt a conflicting insert.
+    3. Assert: (a) no exception raised, (b) returns 0, (c) DB row count unchanged.
+    """
+    db, client, template, start = seeded
+
+    # Step 1: Pre-insert the first occurrence via a separate session (committed).
+    from app.core.database import SessionLocal
+    from app.models.event import PaymentStatus
+
+    pre_db = SessionLocal()
+    try:
+        cal_id = template.calendar_id
+        first_occ_date = start.date()
+        pre_db.add(Event(
+            id=uuid4(), user_id=DEV_USER_ID, client_id=template.client_id,
+            calendar_id=cal_id, title=template.title,
+            start_time=start, end_time=start + timedelta(hours=1),
+            parent_event_id=template.id, occurrence_date=first_occ_date,
+            is_recurring=False, google_event_id=None,
+            status=EventStatus.SCHEDULED.value,
+            payment_status=PaymentStatus.PENDING.value,
+            price=None, billable=True,
+        ))
+        pre_db.commit()
+    finally:
+        pre_db.close()
+
+    # Step 2: Count rows before the conflicting call.
+    before = db.query(Event).filter(Event.parent_event_id == template.id).count()
+
+    # Step 3: Monkeypatch _materialized_dates to return empty set so the service
+    # thinks no occurrences exist yet, triggering a conflicting INSERT.
+    svc = EventService(db)
+    monkeypatch.setattr(svc, "_materialized_dates", lambda template_id: set())
+
+    # range covers only the pre-inserted date
+    range_end = start + timedelta(days=7)
+
+    # (a) must NOT raise
+    result = svc.ensure_occurrences(DEV_USER_ID, start, range_end)
+
+    # (b) returns 0 (rolled back — the race was lost)
+    assert result == 0
+
+    # (c) DB still has the same number of rows (no duplicate, no loss)
+    db.expire_all()  # ensure fresh read after rollback
+    after = db.query(Event).filter(Event.parent_event_id == template.id).count()
+    assert after == before

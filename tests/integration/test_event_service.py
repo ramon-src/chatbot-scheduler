@@ -1,12 +1,14 @@
 # tests/integration/test_event_service.py
-from datetime import datetime
-from uuid import UUID
+from datetime import date, datetime
+from decimal import Decimal
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.core.database import SessionLocal
 from app.models.calendar import Calendar
+from app.models.client import Client
 from app.models.event import Event, EventStatus
 from app.models.user import User
 from app.services.event_service import EventService
@@ -70,6 +72,52 @@ def test_two_users_can_each_have_primary_calendar(db):
     finally:
         db.query(Calendar).filter(Calendar.user_id == second_user_id).delete(synchronize_session=False)
         db.query(User).filter(User.id == second_user_id).delete(synchronize_session=False)
+        db.commit()
+
+
+def test_find_client_session_on_date_late_evening_no_day_shift(db):
+    """M3 regression: a session at 22:00 America/Sao_Paulo (UTC-3) must match the
+    local calendar date (2026-07-07), NOT the UTC date (2026-07-08).
+
+    Before the fix, cast(start_time, Date) operated in the DB session timezone
+    (UTC), so 22:00 SP = 01:00 UTC next day → wrong date match.
+    After the fix, func.timezone('America/Sao_Paulo', start_time) converts the
+    timestamptz to SP local time before the date cast, so 22:00 SP → date 2026-07-07.
+    """
+    svc = EventService(db)
+    # Seed a throwaway client
+    client = Client(
+        id=uuid4(), user_id=DEV_USER_ID, name="Timezone Teste",
+        phone=f"+5551{uuid4().int % 1000000000:09d}", invoice_day=10,
+        consult_price=Decimal("200"), is_active=True,
+    )
+    db.add(client)
+    db.commit()
+
+    # Single non-recurring event at 22:00 SP (UTC−3) on 2026-07-07
+    # In UTC this is 2026-07-08T01:00:00Z — the old cast would have returned 2026-07-08.
+    sp_start = datetime(2026, 7, 7, 22, 0, tzinfo=TZ)
+    sp_end = datetime(2026, 7, 7, 23, 0, tzinfo=TZ)
+    ev = svc.record_event(
+        user_id=DEV_USER_ID, client_id=client.id,
+        title="Sessão Noturna Timezone",
+        start=sp_start, end=sp_end,
+        google_event_id=f"test-tz-{uuid4().hex[:8]}",
+        is_recurring=False,
+    )
+
+    try:
+        # Must find the event on 2026-07-07 (SP local date), not 2026-07-08 (UTC date)
+        found = svc.find_client_session_on_date(DEV_USER_ID, client.id, date(2026, 7, 7))
+        assert found is not None, "Session should be found on its SP local date 2026-07-07"
+        assert found.id == ev.id
+
+        # Must NOT be found on the UTC-shifted date
+        not_found = svc.find_client_session_on_date(DEV_USER_ID, client.id, date(2026, 7, 8))
+        assert not_found is None, "Session must NOT appear on the UTC-shifted date 2026-07-08"
+    finally:
+        db.query(Event).filter(Event.id == ev.id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
         db.commit()
 
 
