@@ -128,12 +128,16 @@ redis: ## redis-cli na infra
 # =============================================================================
 # TESTING (pytest local via uv)
 # =============================================================================
-test: ## Executar toda a suíte (unit + integration)
+test: ## Executar toda a suíte (unit + integration; live é pulado sem RUN_LIVE)
 	@echo "🧪 Running pytest..."
 	@$(UV) run pytest
 
 test-unit: ## Apenas testes unitários
 	@$(UV) run pytest tests/unit/ -v
+
+test-live: ## Testes funcionais AO VIVO (LLM + Google reais; gasta tokens e cria eventos)
+	@echo "🔴 Live functional tests (real LLM + Google)…"
+	@RUN_LIVE=1 $(UV) run pytest -m live -s -v
 
 test-integration: ## Apenas testes de integração
 	@$(UV) run pytest tests/integration/ -v

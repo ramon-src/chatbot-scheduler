@@ -71,3 +71,21 @@ def test_two_users_can_each_have_primary_calendar(db):
         db.query(Calendar).filter(Calendar.user_id == second_user_id).delete(synchronize_session=False)
         db.query(User).filter(User.id == second_user_id).delete(synchronize_session=False)
         db.commit()
+
+
+def test_ensure_calendar_creates_then_updates(db):
+    from app.models.calendar import Calendar
+    # cleanup any pre-existing primary for a clean assertion
+    db.query(Calendar).filter(Calendar.user_id == DEV_USER_ID, Calendar.is_primary == True).delete(synchronize_session=False)  # noqa: E712
+    db.commit()
+    svc = EventService(db)
+    assert svc.get_existing_primary(DEV_USER_ID) is None
+    cal = svc.ensure_calendar(DEV_USER_ID, "sa-cal-1@group.calendar.google.com", name="SimplificaPsi — Dev")
+    assert cal.google_calendar_id == "sa-cal-1@group.calendar.google.com"
+    assert cal.is_primary is True
+    # second call updates the SAME row (no duplicate)
+    cal2 = svc.ensure_calendar(DEV_USER_ID, "sa-cal-2@group.calendar.google.com")
+    assert cal2.id == cal.id
+    assert cal2.google_calendar_id == "sa-cal-2@group.calendar.google.com"
+    # restore the default primary so other tests/seed stay consistent
+    svc.ensure_calendar(DEV_USER_ID, "primary", name="Principal")

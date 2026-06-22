@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 class GoogleCalendarService:
     def __init__(self, resource, timezone: str, calendar_id: str = "primary"):
+        self._resource = resource
         self._events = resource.events()
         self._tz = timezone
         self._calendar_id = calendar_id
@@ -68,6 +69,20 @@ class GoogleCalendarService:
 
     def cancel_event(self, event_id) -> None:
         self._events.delete(calendarId=self._calendar_id, eventId=event_id).execute()
+
+    def create_calendar(self, summary: str) -> dict:
+        body = {"summary": summary, "timeZone": self._tz}
+        created = self._resource.calendars().insert(body=body).execute()
+        return {"id": created["id"]}
+
+    def share_calendar(self, calendar_id: str, email: str, role: str = "writer") -> None:
+        self._resource.acl().insert(
+            calendarId=calendar_id,
+            body={"role": role, "scope": {"type": "user", "value": email}},
+        ).execute()
+
+    def delete_calendar(self, calendar_id: str) -> None:
+        self._resource.calendars().delete(calendarId=calendar_id).execute()
 
     @staticmethod
     def build_weekly_rrule(weekdays, until) -> str:

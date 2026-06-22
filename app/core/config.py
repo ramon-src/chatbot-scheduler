@@ -67,7 +67,9 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI: str = Field(default="http://localhost:8000/auth/google/callback", env="GOOGLE_REDIRECT_URI")
     GOOGLE_SCOPES: List[str] = Field(default=["https://www.googleapis.com/auth/calendar"], env="GOOGLE_SCOPES")
-    
+    GOOGLE_CLIENT_EMAIL: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_EMAIL")
+    GOOGLE_PRIVATE_KEY: Optional[str] = Field(default=None, env="GOOGLE_PRIVATE_KEY")
+
     # =============================================================================
     # WHATSAPP BUSINESS API
     # =============================================================================

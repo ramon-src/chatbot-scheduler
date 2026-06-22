@@ -160,3 +160,45 @@ def test_not_connected_returns_fresh_dict():
     a["data"] = "mutated"
     b = _not_connected()
     assert b["data"] is None
+
+
+async def test_list_events_displays_in_user_timezone():
+    """Bug: events stored as UTC in Postgres were shown in UTC. They must be
+    formatted in the professional's timezone. 13:00 UTC -> 10h São Paulo."""
+    ev = SimpleNamespace(title="Sessão - Maria Silva",
+                         start_time=datetime(2026, 6, 22, 13, 0, tzinfo=ZoneInfo("UTC")))
+    es = MagicMock()
+    es.list_events_in_range.return_value = [ev]
+    deps = _deps(calendar_service=MagicMock(), event_service=es)
+    out = await list_events_impl(deps, period="tomorrow")
+    assert "10h" in out["message"]
+    assert "13h" not in out["message"]
+
+
+async def test_create_event_message_in_user_timezone():
+    """A start passed as UTC must be confirmed in the professional's local time."""
+    cal = MagicMock()
+    cal.create_event.return_value = {"id": "g1", "html_link": "u"}
+    deps = _deps(calendar_service=cal, event_service=MagicMock(), client_by_phone=_client())
+    out = await create_event_impl(
+        deps, client_phone="+5551981321543",
+        start_time=datetime(2026, 6, 22, 13, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    assert out["success"] is True
+    assert "10h" in out["message"]
+
+
+async def test_create_event_naive_start_assumes_user_timezone():
+    """A naive start (LLM omitted the offset) is interpreted in the professional's
+    timezone, so Google + Postgres get the correct instant (10h local, not 10h UTC)."""
+    cal = MagicMock()
+    cal.create_event.return_value = {"id": "g1", "html_link": "u"}
+    deps = _deps(calendar_service=cal, event_service=MagicMock(), client_by_phone=_client())
+    await create_event_impl(
+        deps, client_phone="+5551981321543",
+        start_time=datetime(2026, 6, 22, 10, 0),  # naive
+    )
+    sent = cal.create_event.call_args.kwargs["start"]
+    assert sent.tzinfo is not None  # made aware
+    assert sent.utcoffset().total_seconds() == -3 * 3600  # America/Sao_Paulo
+    assert sent.hour == 10

@@ -15,9 +15,7 @@ class EventService:
         self.db = db
 
     def get_primary_calendar(self, user_id: UUID) -> Calendar:
-        cal = self.db.query(Calendar).filter(
-            and_(Calendar.user_id == user_id, Calendar.is_primary == True)  # noqa: E712
-        ).first()
+        cal = self.get_existing_primary(user_id)
         if cal is None:
             cal = Calendar(
                 user_id=user_id, name="Principal",
@@ -26,6 +24,27 @@ class EventService:
             self.db.add(cal)
             self.db.commit()
             self.db.refresh(cal)
+        return cal
+
+    def get_existing_primary(self, user_id: UUID) -> Calendar | None:
+        return self.db.query(Calendar).filter(
+            and_(Calendar.user_id == user_id, Calendar.is_primary == True)  # noqa: E712
+        ).first()
+
+    def ensure_calendar(self, user_id: UUID, google_calendar_id: str, name: str = "Principal") -> Calendar:
+        """Upsert the user's primary calendar row with the real google_calendar_id."""
+        cal = self.get_existing_primary(user_id)
+        if cal is None:
+            cal = Calendar(
+                user_id=user_id, name=name, google_calendar_id=google_calendar_id,
+                is_primary=True, is_active=True,
+            )
+            self.db.add(cal)
+        else:
+            cal.google_calendar_id = google_calendar_id
+            cal.name = name
+        self.db.commit()
+        self.db.refresh(cal)
         return cal
 
     def record_event(

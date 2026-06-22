@@ -26,6 +26,7 @@ Visão completa do produto/domínio: `../simplifica-psi-chatbot/PROJECT_OVERVIEW
 4. **Fundação de LLM portada do `rooster-platform`** (do Bruno): `get_llm_model()` retorna um `FallbackModel` (cadeia OpenAI→OpenRouter→menor) — resiliência de provedor de graça. Ver `app/agents/foundation/llm.py`.
 5. **Escolha do modelo principal é por eval**, não por achismo (candidatos: `claude-haiku-4.5`, `gpt-5.4-mini`).
 6. **Ingestão de mensagens é provider-agnostic** (Plano 4): uma porta única (`InboundMessage`) com adapters que normalizam **Evolution API** e **WhatsApp Oficial (Meta Cloud API)** para um formato interno comum. O agente nunca conhece o provedor de origem; trocar/adicionar provedor é só um adapter novo. O mesmo vale para o envio (porta de saída).
+7. **Auth Google é dual-mode** (`app/services/calendar_provider.py`). **Padrão = service account** (`GOOGLE_CLIENT_EMAIL`+`GOOGLE_PRIVATE_KEY`): cria um calendário por profissional sob a SA e compartilha best-effort com o e-mail dele — fricção zero pra começar. **Upgrade opcional = OAuth por-usuário** (`google_credentials`, via `scripts/google_auth.py`), que **tem prioridade** quando existe (eventos vão pra agenda pessoal do profissional). OAuth quebrado → "não conectado" (não cai pra SA, pra não dividir eventos). Spec: `docs/superpowers/specs/2026-06-21-google-auth-dual-mode-design.md`.
 
 Spec: `docs/superpowers/specs/2026-06-21-simplifica-agent-system-design.md`
 Plano atual: `docs/superpowers/plans/2026-06-21-foundation-and-clients-slice.md`

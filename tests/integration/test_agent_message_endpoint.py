@@ -3,13 +3,14 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models.function import FunctionModel
 
-from app.main import app
 from app.api import agent_routes
 from app.core.config import settings
 from app.core.database import get_db
+from app.main import app
+
 
 # Placeholder model for agent construction (never called at request time)
 def _noop_model(messages, info):
@@ -35,6 +36,8 @@ def test_agent_message_returns_content(monkeypatch):
 
     monkeypatch.setattr(agent_routes, "build_simplifica_agent", build_with_override)
     monkeypatch.setattr(agent_routes, "ClientService", lambda db: MagicMock())
+    # Keep the endpoint test network-free: don't resolve real Google calendar access.
+    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
 
     # Override get_db to avoid needing a real DB connection, and override the
     # model with the scripted FunctionModel at the agent level.
