@@ -113,3 +113,25 @@ def test_build_weekly_rrule_with_until():
 def test_build_weekly_rrule_without_until():
     rule = GoogleCalendarService.build_weekly_rrule(None, None)
     assert rule == "RRULE:FREQ=WEEKLY"
+
+
+def test_create_calendar_inserts_and_returns_id():
+    resource = MagicMock()
+    resource.calendars.return_value.insert.return_value.execute.return_value = {"id": "cal-xyz@group.calendar.google.com"}
+    svc = GoogleCalendarService(resource, timezone="America/Sao_Paulo")
+    out = svc.create_calendar("SimplificaPsi — Dra. Ana")
+    assert out["id"] == "cal-xyz@group.calendar.google.com"
+    body = resource.calendars.return_value.insert.call_args.kwargs["body"]
+    assert body["summary"] == "SimplificaPsi — Dra. Ana"
+    assert body["timeZone"] == "America/Sao_Paulo"
+
+
+def test_share_calendar_inserts_acl_writer_rule():
+    resource = MagicMock()
+    svc = GoogleCalendarService(resource, timezone="America/Sao_Paulo")
+    svc.share_calendar("cal-1", "ana@gmail.com")
+    kwargs = resource.acl.return_value.insert.call_args.kwargs
+    assert kwargs["calendarId"] == "cal-1"
+    assert kwargs["body"]["role"] == "writer"
+    assert kwargs["body"]["scope"] == {"type": "user", "value": "ana@gmail.com"}
+    resource.acl.return_value.insert.return_value.execute.assert_called_once()
