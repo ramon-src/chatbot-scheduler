@@ -1,13 +1,15 @@
 """Postgres dual-write for agenda events (Google Calendar is source of truth)."""
 
-from datetime import datetime
+from datetime import date, datetime, timedelta  # noqa: F401
 from uuid import UUID
 
+from dateutil.rrule import rrulestr
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.calendar import Calendar
-from app.models.event import Event, EventStatus
+from app.models.client import Client
+from app.models.event import Event, EventStatus, PaymentStatus
 
 
 class EventService:
@@ -95,3 +97,54 @@ class EventService:
         self.db.commit()
         self.db.refresh(event)
         return event
+
+    def _series_templates(self, user_id: UUID) -> list[Event]:
+        return self.db.query(Event).filter(
+            and_(
+                Event.user_id == user_id,
+                Event.is_recurring == True,  # noqa: E712
+                Event.parent_event_id.is_(None),
+                Event.status != EventStatus.CANCELLED.value,
+            )
+        ).all()
+
+    def ensure_occurrences(self, user_id: UUID, range_start: datetime, range_end: datetime) -> int:
+        """Idempotently materialize per-occurrence rows for the user's recurring
+        series within [range_start, range_end]. Returns the number created."""
+        created = 0
+        for template in self._series_templates(user_id):
+            rule_text = (template.recurrence_rule or "").removeprefix("RRULE:")
+            if not rule_text:
+                continue
+            rule = rrulestr(rule_text, dtstart=template.start_time)
+            duration = template.end_time - template.start_time
+            existing = {
+                row.occurrence_date
+                for row in self.db.query(Event.occurrence_date).filter(
+                    Event.parent_event_id == template.id
+                )
+            }
+            client = self.db.get(Client, template.client_id) if template.client_id else None
+            fallback_price = client.consult_price if client is not None else None
+            for occ_start in rule.between(range_start, range_end, inc=True):
+                if occ_start >= range_end:
+                    continue
+                occ_date = occ_start.date()
+                if occ_date in existing:
+                    continue
+                self.db.add(Event(
+                    user_id=user_id, client_id=template.client_id,
+                    calendar_id=template.calendar_id, title=template.title,
+                    start_time=occ_start, end_time=occ_start + duration,
+                    parent_event_id=template.id, occurrence_date=occ_date,
+                    is_recurring=False, google_event_id=None,
+                    status=EventStatus.SCHEDULED.value,
+                    payment_status=PaymentStatus.PENDING.value,
+                    price=template.price if template.price is not None else fallback_price,
+                    billable=True,
+                ))
+                existing.add(occ_date)
+                created += 1
+        if created:
+            self.db.commit()
+        return created
