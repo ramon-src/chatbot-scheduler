@@ -1,6 +1,7 @@
 """Agenda tools: pure impls + thin @agent.tool wrappers. Google Calendar is source of truth."""
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.agents.deps import AgentDeps
 from app.utils.date_range import calculate_date_range
@@ -27,8 +28,17 @@ def _compensate_google(deps: AgentDeps, google_event_id: str) -> None:
         pass  # nothing more we can do; surfaced to the user as a retry prompt
 
 
-def _fmt(dt: datetime) -> str:
-    return dt.strftime("%d/%m às %Hh%M").replace("h00", "h")
+def _ensure_aware(dt: datetime, tz: str) -> datetime:
+    """A naive datetime is assumed to already be in the professional's timezone."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=ZoneInfo(tz))
+    return dt
+
+
+def _fmt(dt: datetime, tz: str) -> str:
+    """Format in the professional's timezone (DB stores UTC-aware datetimes)."""
+    local = _ensure_aware(dt, tz).astimezone(ZoneInfo(tz))
+    return local.strftime("%d/%m às %Hh%M").replace("h00", "h")
 
 
 async def _resolve_client(deps: AgentDeps, client_name, client_phone):
@@ -65,6 +75,7 @@ async def create_event_impl(
     if error:
         return error
 
+    start_time = _ensure_aware(start_time, deps.timezone)
     minutes = duration_minutes or deps.default_consult_minutes
     end = start_time + timedelta(minutes=minutes)
     summary = title or f"Sessão - {client.name}"
@@ -82,7 +93,7 @@ async def create_event_impl(
         return _dual_write_failed()
     first = client.name.split()[0]
     return {"success": True, "data": {"client": client.name, "start": start_time.isoformat()},
-            "message": f"Agendei {first} para {_fmt(start_time)}."}
+            "message": f"Agendei {first} para {_fmt(start_time, deps.timezone)}."}
 
 
 async def create_recurring_event_impl(
@@ -96,6 +107,7 @@ async def create_recurring_event_impl(
     if error:
         return error
 
+    start_time = _ensure_aware(start_time, deps.timezone)
     minutes = duration_minutes or deps.default_consult_minutes
     end = start_time + timedelta(minutes=minutes)
     summary = title or f"Sessão - {client.name}"
@@ -115,7 +127,7 @@ async def create_recurring_event_impl(
         return _dual_write_failed()
     first = client.name.split()[0]
     return {"success": True, "data": {"client": client.name},
-            "message": f"Agendei sessões recorrentes para {first}, começando {_fmt(start_time)}."}
+            "message": f"Agendei sessões recorrentes para {first}, começando {_fmt(start_time, deps.timezone)}."}
 
 
 async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
@@ -132,7 +144,7 @@ async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
     if not items:
         return {"success": True, "data": {"events": [], "total": 0},
                 "message": "Você não tem compromissos nesse período."}
-    lines = "; ".join(f"{e.title} em {_fmt(e.start_time)}" for e in events)
+    lines = "; ".join(f"{e.title} em {_fmt(e.start_time, deps.timezone)}" for e in events)
     return {"success": True, "data": {"events": items, "total": len(items)},
             "message": f"Você tem {len(items)} compromisso(s): {lines}."}
 
