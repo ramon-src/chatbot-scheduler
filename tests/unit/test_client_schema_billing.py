@@ -29,3 +29,21 @@ def test_client_response_accepts_datetime_timestamps():
     )
     assert r.created_at.hour == 19
     assert r.updated_at.minute == 31
+
+
+def test_client_response_from_orm_carries_billing_fields():
+    """Regression: ClientResponse.from_orm passes invoice_day/consult_price, but the
+    schema must DECLARE them or Pydantic drops them — which broke price stamping in
+    create_event (AttributeError on client.consult_price). Proven via a stub ORM."""
+    from types import SimpleNamespace
+
+    orm = SimpleNamespace(
+        id=uuid4(), user_id=uuid4(), name="Maria Silva", phone="+5551981321543",
+        email=None, birth_date=None, notes=None, is_active=True,
+        invoice_day=10, consult_price=Decimal("200.00"),
+        created_at=datetime(2026, 6, 21, 19, 30, 5),
+        updated_at=datetime(2026, 6, 21, 19, 31, 0),
+    )
+    r = ClientResponse.from_orm(orm)
+    assert r.consult_price == Decimal("200.00")
+    assert r.invoice_day == 10

@@ -229,6 +229,14 @@ class ClientResponse(ClientBase):
         ...,
         description="ID do psicólogo proprietário"
     )
+    invoice_day: Optional[int] = Field(
+        None,
+        description="Dia do mês para faturamento"
+    )
+    consult_price: Optional[Decimal] = Field(
+        None,
+        description="Preço da consulta em reais"
+    )
     created_at: datetime = Field(
         ...,
         description="Data de criação do cliente"
