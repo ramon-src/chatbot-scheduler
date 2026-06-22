@@ -12,9 +12,10 @@ from app.agents.deps import AgentDeps
 from app.agents.simplifica_agent import build_simplifica_agent
 from app.core.config import settings
 from app.core.database import get_db
+from app.models.user import User
+from app.services.calendar_provider import build_calendar_access
 from app.services.client_service import ClientService
 from app.services.event_service import EventService
-from app.services.google_auth import has_credentials, load_credentials
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -28,33 +29,32 @@ class AgentMessageResponse(BaseModel):
     content: str
 
 
-@router.post("/message", response_model=AgentMessageResponse)
-async def agent_message(payload: AgentMessageRequest, db: Session = Depends(get_db)):
-    agent = build_simplifica_agent()
-
-    calendar_service = None
-    if has_credentials(db, payload.user_id):
-        try:
-            from googleapiclient.discovery import build
-
-            from app.services.google_calendar_service import GoogleCalendarService
-
-            creds = load_credentials(db, payload.user_id)
-            resource = build("calendar", "v3", credentials=creds, cache_discovery=False)
-            calendar_service = GoogleCalendarService(resource, settings.TIMEZONE)
-        except Exception:  # noqa: BLE001 - never 500 the chat on auth issues
-            calendar_service = None
-
-    deps = AgentDeps(
+def _build_agent_deps(db: Session, user) -> AgentDeps:
+    access = None
+    try:
+        access = build_calendar_access(db, user, settings)
+    except Exception:  # noqa: BLE001 - never 500 the chat on calendar setup
+        access = None
+    return AgentDeps(
         db=db,
-        user_id=payload.user_id,
-        user_name=None,
+        user_id=user.id,
+        user_name=user.name,
         current_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)),
         timezone=settings.TIMEZONE,
         history_summary=None,
         client_service=ClientService(db),
-        calendar_service=calendar_service,
+        calendar_service=access.service if access else None,
         event_service=EventService(db),
     )
+
+
+@router.post("/message", response_model=AgentMessageResponse)
+async def agent_message(payload: AgentMessageRequest, db: Session = Depends(get_db)):
+    agent = build_simplifica_agent()
+    user = db.get(User, payload.user_id)
+    if user is None:
+        # unknown user: run with no calendar/user context (client tools still scope by user_id)
+        user = User(id=payload.user_id, name="profissional", email=None)
+    deps = _build_agent_deps(db, user)
     result = await agent.run(payload.message, deps=deps)
     return AgentMessageResponse(content=result.output)
