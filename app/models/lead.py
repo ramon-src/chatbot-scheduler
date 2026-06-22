@@ -36,8 +36,7 @@ class Lead(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    # chat_sessions relationship is wired in Task 3 once lead_id FK is added to
-    # chat_sessions and back_populates="lead" is set on the ChatSession side.
+    chat_sessions = relationship("ChatSession", back_populates="lead", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Lead(id={self.id}, phone={self.phone}, status={self.status})>"
