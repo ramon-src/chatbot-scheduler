@@ -17,8 +17,9 @@ from app.agents.tools.calendar_tools import (
 TZ = ZoneInfo("America/Sao_Paulo")
 
 
-def _client(name="Maria Silva", phone="+5551981321543"):
-    return SimpleNamespace(id=uuid4(), name=name, phone=phone)
+def _client(name="Maria Silva", phone="+5551981321543", consult_price=None):
+    from decimal import Decimal
+    return SimpleNamespace(id=uuid4(), name=name, phone=phone, consult_price=consult_price or Decimal("150"))
 
 
 def _deps(*, calendar_service=None, event_service=None, client_by_phone=None, client_by_name=None):

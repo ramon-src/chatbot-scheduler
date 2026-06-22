@@ -85,6 +85,7 @@ async def create_event_impl(
         deps.event_service.record_event(
             user_id=deps.user_id, client_id=client.id, title=summary,
             start=start_time, end=end, google_event_id=created["id"],
+            price=client.consult_price,
         )
     except Exception:
         # Local write failed after the Google event was created: compensate by
@@ -139,6 +140,7 @@ async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
         return {"success": False, "data": None,
                 "message": "Não entendi o período. Tente 'hoje', 'esta semana' ou 'este mês'."}
 
+    deps.event_service.ensure_occurrences(deps.user_id, start, end)
     events = deps.event_service.list_events_in_range(deps.user_id, start, end)
     items = [{"title": e.title, "start": e.start_time.isoformat()} for e in events]
     if not items:

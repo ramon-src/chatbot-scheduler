@@ -73,6 +73,8 @@ class EventService:
                 Event.start_time >= start,
                 Event.start_time < end,
                 Event.status != EventStatus.CANCELLED.value,
+                # exclude series templates (the expansion source is not a session)
+                ~and_(Event.is_recurring == True, Event.parent_event_id.is_(None)),  # noqa: E712
             )
         ).order_by(Event.start_time).all()
 
