@@ -8,7 +8,7 @@ separately via `dispatch_agent_run` (scheduled on FastAPI BackgroundTasks).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -69,6 +69,42 @@ class IngestionService:
             user_id=user.id if user is not None else None,
             record_id=record.id,
         )
+
+
+def find_orphan_professional_messages(
+    db: Session, older_than_minutes: int = 2, limit: int = 10
+) -> list[InboundMessageRecord]:
+    """Professional rows whose agent run never completed (crash recovery).
+
+    `older_than_minutes` keeps freshly-inserted rows — whose normal dispatch is
+    still in flight — out of the sweep. Capped at `limit` to bound per-request work.
+    """
+    cutoff = datetime.now(tz=UTC) - timedelta(minutes=older_than_minutes)
+    return (
+        db.query(InboundMessageRecord)
+        .filter(
+            InboundMessageRecord.classification == "professional",
+            InboundMessageRecord.agent_run_at.is_(None),
+            InboundMessageRecord.user_id.isnot(None),
+            InboundMessageRecord.received_at < cutoff,
+        )
+        .order_by(InboundMessageRecord.received_at.asc())
+        .limit(limit)
+        .all()
+    )
+
+
+def build_inbound_from_record(record: InboundMessageRecord) -> InboundMessage:
+    """Reconstruct the provider-agnostic InboundMessage from a stored row."""
+    return InboundMessage(
+        provider=record.provider,
+        sender_phone=record.sender_phone,
+        text=record.text,
+        provider_message_id=record.provider_message_id,
+        timestamp=record.received_at,
+        recipient_phone=record.recipient_phone,
+        raw=record.raw or {},
+    )
 
 
 async def dispatch_agent_run(inbound: InboundMessage, user_id: UUID, record_id: UUID) -> None:
