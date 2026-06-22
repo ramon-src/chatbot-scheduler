@@ -110,23 +110,34 @@ def build_inbound_from_record(record: InboundMessageRecord) -> InboundMessage:
 async def dispatch_agent_run(inbound: InboundMessage, user_id: UUID, record_id: UUID) -> None:
     """Run the professional agent for an already-recorded message, exactly once.
 
-    Opens its own DB session (it runs after the webhook response, on a
-    BackgroundTask). Idempotent: if the record is gone or already marked
-    `agent_run_at`, it returns without running — this is what makes the
-    opportunistic re-dispatch safe against double runs. Best-effort otherwise.
+    Opens its own DB session (runs after the webhook response, on a BackgroundTask).
+    Claims the record atomically (UPDATE ... WHERE agent_run_at IS NULL): under READ
+    COMMITTED exactly one concurrent caller wins the claim, so the opportunistic
+    re-dispatch can never double-run. Marking on claim means a crash mid-run leaves
+    the row marked (not re-swept) — a strictly smaller window than the dropped-run
+    bug this guards against. Best-effort otherwise.
     """
     db = SessionLocal()
     try:
-        record = db.get(InboundMessageRecord, record_id)
-        if record is None or record.agent_run_at is not None:
-            return
+        claimed = (
+            db.query(InboundMessageRecord)
+            .filter(
+                InboundMessageRecord.id == record_id,
+                InboundMessageRecord.agent_run_at.is_(None),
+            )
+            .update(
+                {InboundMessageRecord.agent_run_at: datetime.now(ZoneInfo(settings.TIMEZONE))},
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+        if not claimed:
+            return  # another dispatch already claimed/ran this record
         user = db.get(User, user_id)
         if user is None:
             return
         agent = build_simplifica_agent()
         await process_professional_message(db, agent, user, inbound.text, inbound.sender_phone)
-        record.agent_run_at = datetime.now(ZoneInfo(settings.TIMEZONE))
-        db.commit()
     except Exception:  # noqa: BLE001 - background work must never raise
         logger.warning("agent run for inbound message failed", exc_info=True)
     finally:
