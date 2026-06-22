@@ -69,15 +69,44 @@ async def _maybe_update_summary(history: ChatHistoryService, session) -> None:
         logger.warning("conversation summary update failed", exc_info=True)
 
 
+async def _run_with_memory(db: Session, agent, session, deps, text: str) -> str:
+    """Replay history -> run agent -> persist turn -> fold summary. Owner-agnostic."""
+    history = ChatHistoryService(db)
+    message_history = to_model_messages(history.recent_messages(session, RAW_HISTORY_LIMIT))
+    result = await agent.run(text, deps=deps, message_history=message_history)
+    if _persist_turn(db, history, session, text, result.output):
+        await _maybe_update_summary(history, session)
+    return result.output
+
+
 async def process_professional_message(db: Session, agent, user, text: str, phone: str) -> str:
     """Run the full memory flow for a known professional and return the reply text."""
     history = ChatHistoryService(db)
     session = history.get_or_create_session(user.id, phone or DEV_PHONE)
-    message_history = to_model_messages(history.recent_messages(session, RAW_HISTORY_LIMIT))
-
     deps = build_agent_deps(db, user, history_summary=session.summary)
-    result = await agent.run(text, deps=deps, message_history=message_history)
+    return await _run_with_memory(db, agent, session, deps, text)
 
-    if _persist_turn(db, history, session, text, result.output):
-        await _maybe_update_summary(history, session)
-    return result.output
+
+def build_lead_deps(db: Session, lead, history_summary: str | None = None):
+    from app.agents.deps import LeadAgentDeps
+    from app.services.lead_service import LeadService
+
+    return LeadAgentDeps(
+        db=db,
+        lead_id=lead.id,
+        lead_name=lead.name,
+        lead_phone=lead.phone,
+        current_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)),
+        timezone=settings.TIMEZONE,
+        history_summary=history_summary,
+        lead_service=LeadService(db),
+        trial_days=settings.LEAD_TRIAL_DAYS,
+    )
+
+
+async def process_lead_message(db: Session, agent, lead, text: str, phone: str) -> str:
+    """Run the full memory flow for a lead (owner = lead) and return the reply text."""
+    history = ChatHistoryService(db)
+    session = history.get_or_create_lead_session(lead.id, phone or DEV_PHONE)
+    deps = build_lead_deps(db, lead, history_summary=session.summary)
+    return await _run_with_memory(db, agent, session, deps, text)
