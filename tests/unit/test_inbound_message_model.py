@@ -21,3 +21,9 @@ def test_table_and_columns():
 def test_exported_from_models_package():
     from app.models import InboundMessageRecord as Exported
     assert Exported is InboundMessageRecord
+
+
+def test_raw_column_is_jsonb():
+    from sqlalchemy.dialects.postgresql import JSONB
+    col = InboundMessageRecord.__table__.columns["raw"]
+    assert isinstance(col.type, JSONB)

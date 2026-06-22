@@ -3,7 +3,6 @@
 import uuid
 
 from sqlalchemy import (
-    JSON,
     Column,
     DateTime,
     ForeignKey,
@@ -11,7 +10,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -43,7 +42,7 @@ class InboundMessageRecord(Base):
         nullable=True,
         index=True,
     )
-    raw = Column(JSON, nullable=True)
+    raw = Column(JSONB, nullable=True)
     received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     def __repr__(self) -> str:
