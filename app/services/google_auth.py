@@ -3,8 +3,31 @@
 from uuid import UUID
 
 from google.auth.transport.requests import Request
+from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from sqlalchemy.orm import Session
+
+GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+
+def service_account_available(settings) -> bool:
+    return bool(
+        getattr(settings, "GOOGLE_CLIENT_EMAIL", None)
+        and getattr(settings, "GOOGLE_PRIVATE_KEY", None)
+    )
+
+
+def build_service_account_credentials(settings):
+    """Build server-to-server (JWT) credentials from the SA env vars, or None."""
+    if not service_account_available(settings):
+        return None
+    info = {
+        "type": "service_account",
+        "client_email": settings.GOOGLE_CLIENT_EMAIL,
+        "private_key": settings.GOOGLE_PRIVATE_KEY.replace("\\n", "\n"),
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    return service_account.Credentials.from_service_account_info(info, scopes=GOOGLE_CALENDAR_SCOPES)
 
 from app.models.google_credential import GoogleCredential
 
