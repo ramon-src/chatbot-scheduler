@@ -51,6 +51,32 @@ class ChatHistoryService:
         self.db.refresh(session)
         return session
 
+    def get_or_create_lead_session(self, lead_id: UUID, phone_number: str) -> ChatSession:
+        existing = (
+            self.db.query(ChatSession)
+            .filter(
+                and_(
+                    ChatSession.lead_id == lead_id,
+                    ChatSession.phone_number == phone_number,
+                    ChatSession.is_active == True,  # noqa: E712
+                )
+            )
+            .order_by(ChatSession.updated_at.desc())
+            .first()
+        )
+        if existing is not None:
+            return existing
+        session = ChatSession(
+            lead_id=lead_id,
+            session_id=str(uuid.uuid4()),
+            phone_number=phone_number,
+            is_active=True,
+        )
+        self.db.add(session)
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
     def recent_messages(self, session: ChatSession, limit: int) -> list[ChatMessage]:
         """The most recent `limit` messages, in chronological (ascending) order.
 

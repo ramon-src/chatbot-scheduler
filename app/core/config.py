@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # AGENT
     # =============================================================================
     SIMPLIFICA_AGENT_MODEL: str = Field(default="gpt-5.4-mini", env="SIMPLIFICA_AGENT_MODEL")
+    LEAD_AGENT_MODEL: str = Field(default="gpt-5.4-mini", env="LEAD_AGENT_MODEL")
+    LEAD_TRIAL_DAYS: int = Field(default=7, env="LEAD_TRIAL_DAYS")
     TIMEZONE: str = Field(default="America/Sao_Paulo", env="TIMEZONE")
 
     # =============================================================================

@@ -4,7 +4,7 @@ Chat session model for SQLAlchemy
 
 import uuid
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -16,7 +16,13 @@ class ChatSession(Base):
     """Chat session model"""
 
     __tablename__ = "chat_sessions"
-    __table_args__ = {"schema": "simplificapsi"}
+    __table_args__ = (
+        CheckConstraint(
+            "(user_id IS NOT NULL) <> (lead_id IS NOT NULL)",
+            name="ck_chat_sessions_one_owner",
+        ),
+        {"schema": "simplificapsi"},
+    )
 
     # =============================================================================
     # PRIMARY KEY
@@ -26,7 +32,8 @@ class ChatSession(Base):
     # =============================================================================
     # FOREIGN KEYS
     # =============================================================================
-    user_id = Column(UUID(as_uuid=True), ForeignKey("simplificapsi.users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("simplificapsi.users.id", ondelete="CASCADE"), nullable=True, index=True)
+    lead_id = Column(UUID(as_uuid=True), ForeignKey("simplificapsi.leads.id", ondelete="CASCADE"), nullable=True, index=True)
 
     # =============================================================================
     # BASIC INFO
@@ -54,6 +61,7 @@ class ChatSession(Base):
     # RELATIONSHIPS
     # =============================================================================
     user = relationship("User", back_populates="chat_sessions")
+    lead = relationship("Lead", back_populates="chat_sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
 
     # =============================================================================

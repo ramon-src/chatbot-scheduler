@@ -15,19 +15,23 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-# Imported at module scope so tests can monkeypatch it.
+# Imported at module scope so tests can monkeypatch them.
+from app.agents.lead_agent import build_lead_agent
 from app.agents.simplifica_agent import build_simplifica_agent
+from app.channels.evolution_outbound import EvolutionOutboundAdapter
 from app.channels.inbound import InboundMessage
+from app.channels.outbound import OutboundMessage
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import get_logger
 from app.models.inbound_message import InboundMessageRecord
 from app.models.user import User
-from app.services.agent_runner import process_professional_message
+from app.services.agent_runner import process_lead_message, process_professional_message
 from app.services.calendar_provider import (
     build_calendar_access,  # noqa: F401 (patch target for tests)
 )
 from app.services.identity_service import resolve_sender
+from app.services.lead_service import LeadService
 
 logger = get_logger(__name__)
 
@@ -140,5 +144,38 @@ async def dispatch_agent_run(inbound: InboundMessage, user_id: UUID, record_id: 
         await process_professional_message(db, agent, user, inbound.text, inbound.sender_phone)
     except Exception:  # noqa: BLE001 - background work must never raise
         logger.warning("agent run for inbound message failed", exc_info=True)
+    finally:
+        db.close()
+
+
+async def dispatch_lead_run(inbound: InboundMessage, record_id: UUID) -> None:
+    """Run the lead agent for an already-recorded lead message, exactly once, then
+    send the reply back over WhatsApp (best-effort). Same atomic-claim guard as the
+    professional path: UPDATE ... WHERE agent_run_at IS NULL wins for exactly one caller.
+    """
+    db = SessionLocal()
+    try:
+        claimed = (
+            db.query(InboundMessageRecord)
+            .filter(
+                InboundMessageRecord.id == record_id,
+                InboundMessageRecord.agent_run_at.is_(None),
+            )
+            .update(
+                {InboundMessageRecord.agent_run_at: datetime.now(ZoneInfo(settings.TIMEZONE))},
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+        if not claimed:
+            return
+        lead = LeadService(db).get_or_create_lead(inbound.sender_phone)
+        agent = build_lead_agent()
+        reply = await process_lead_message(db, agent, lead, inbound.text, inbound.sender_phone)
+        EvolutionOutboundAdapter(settings).send(
+            OutboundMessage(to_phone=inbound.sender_phone, text=reply)
+        )
+    except Exception:  # noqa: BLE001 - background work must never raise
+        logger.warning("lead run for inbound message failed", exc_info=True)
     finally:
         db.close()

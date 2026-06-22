@@ -45,6 +45,8 @@ class User(Base):
     # =============================================================================
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    # Trial expiry for accounts created by the lead agent (NULL = no expiry).
+    access_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     # =============================================================================
     # RELATIONSHIPS

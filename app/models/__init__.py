@@ -8,6 +8,7 @@ from .client import Client
 from .event import Event, EventStatus, PaymentStatus
 from .google_credential import GoogleCredential
 from .inbound_message import InboundMessageRecord
+from .lead import Lead
 from .user import User
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "ChatMessage",
     "GoogleCredential",
     "InboundMessageRecord",
+    "Lead",
 ]

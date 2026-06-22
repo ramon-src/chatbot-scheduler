@@ -24,6 +24,7 @@ from app.services.ingestion_service import (
     IngestionService,
     build_inbound_from_record,
     dispatch_agent_run,
+    dispatch_lead_run,
     find_orphan_professional_messages,
 )
 
@@ -41,6 +42,8 @@ def _ingest_and_maybe_schedule(db: Session, inbound: InboundMessage, background:
     result = IngestionService(db).handle(inbound)
     if result.status == "professional" and result.user_id is not None:
         background.add_task(dispatch_agent_run, inbound, result.user_id, result.record_id)
+    elif result.status == "lead" and result.record_id is not None:
+        background.add_task(dispatch_lead_run, inbound, result.record_id)
     # Opportunistic crash recovery: re-dispatch professional runs that never
     # completed. dispatch_agent_run's agent_run_at guard makes this double-safe.
     for orphan in find_orphan_professional_messages(db):
