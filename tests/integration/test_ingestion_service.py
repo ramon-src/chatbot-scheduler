@@ -121,8 +121,15 @@ async def test_dispatch_agent_run_persists_a_turn(db_user_phone, monkeypatch):
     monkeypatch.setattr(ingestion_service, "build_simplifica_agent", lambda: agent)
 
     inbound = _make("MID-RUN-1", PRO_PHONE)
+    db = SessionLocal()
+    try:
+        res = IngestionService(db).handle(inbound)
+        record_id = res.record_id
+    finally:
+        db.close()
+
     with agent.override(model=FunctionModel(scripted)):
-        await dispatch_agent_run(inbound, DEV_USER_ID)
+        await dispatch_agent_run(inbound, DEV_USER_ID, record_id)
 
     db = SessionLocal()
     try:
@@ -143,5 +150,78 @@ async def test_dispatch_agent_run_persists_a_turn(db_user_phone, monkeypatch):
             synchronize_session=False
         )
         db.commit()
+    finally:
+        _purge_inbound(db, "MID-RUN-1")
+        db.close()
+
+
+async def test_dispatch_marks_agent_run_at(db_user_phone, monkeypatch):
+    from app.models.inbound_message import InboundMessageRecord
+
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None, raising=False)
+
+    def _noop(messages, info):
+        return ModelResponse(parts=[TextPart("noop")])
+
+    async def scripted(messages, info):
+        return ModelResponse(parts=[TextPart("ok")])
+
+    with patch("app.agents.simplifica_agent.get_llm_model", return_value=FunctionModel(_noop)):
+        from app.agents.simplifica_agent import build_simplifica_agent
+        agent = build_simplifica_agent()
+    monkeypatch.setattr(ingestion_service, "build_simplifica_agent", lambda: agent)
+
+    db = SessionLocal()
+    try:
+        res = IngestionService(db).handle(_make("MID-MARK-1", PRO_PHONE))
+        assert res.status == "professional"
+        record_id = res.record_id
+    finally:
+        db.close()
+
+    inbound = _make("MID-MARK-1", PRO_PHONE)
+    with agent.override(model=FunctionModel(scripted)):
+        await dispatch_agent_run(inbound, DEV_USER_ID, record_id)
+
+    db = SessionLocal()
+    try:
+        rec = db.get(InboundMessageRecord, record_id)
+        assert rec.agent_run_at is not None
+    finally:
+        _purge_inbound(db, "MID-MARK-1")
+        db.close()
+
+
+async def test_dispatch_is_skipped_when_already_run(db_user_phone, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.core.config import settings as _settings
+    from app.models.inbound_message import InboundMessageRecord
+
+    ran = {"called": False}
+
+    async def boom(*a, **k):
+        ran["called"] = True
+        raise AssertionError("agent must not run for an already-marked record")
+
+    monkeypatch.setattr(ingestion_service, "process_professional_message", boom)
+
+    db = SessionLocal()
+    try:
+        res = IngestionService(db).handle(_make("MID-SKIP-1", PRO_PHONE))
+        rec = db.get(InboundMessageRecord, res.record_id)
+        rec.agent_run_at = datetime.now(ZoneInfo(_settings.TIMEZONE))
+        db.commit()
+        record_id = res.record_id
+    finally:
+        db.close()
+
+    await dispatch_agent_run(_make("MID-SKIP-1", PRO_PHONE), DEV_USER_ID, record_id)
+    assert ran["called"] is False
+
+    db = SessionLocal()
+    try:
+        _purge_inbound(db, "MID-SKIP-1")
     finally:
         db.close()

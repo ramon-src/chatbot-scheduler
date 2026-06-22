@@ -105,7 +105,7 @@ def test_evolution_known_professional_schedules_agent(monkeypatch):
 
     scheduled = {}
 
-    async def fake_dispatch(inbound, user_id):
+    async def fake_dispatch(inbound, user_id, record_id):
         scheduled["user_id"] = user_id
         scheduled["text"] = inbound.text
 
@@ -173,7 +173,7 @@ def test_meta_inbound_known_professional_schedules_agent(monkeypatch):
 
     scheduled = {}
 
-    async def fake_dispatch(inbound, user_id):
+    async def fake_dispatch(inbound, user_id, record_id):
         scheduled["user_id"] = user_id
         scheduled["text"] = inbound.text
 

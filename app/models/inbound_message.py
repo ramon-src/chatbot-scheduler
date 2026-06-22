@@ -44,6 +44,7 @@ class InboundMessageRecord(Base):
     )
     raw = Column(JSONB, nullable=True)
     received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    agent_run_at = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return (

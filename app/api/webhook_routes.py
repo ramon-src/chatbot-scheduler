@@ -35,7 +35,7 @@ _OK = {"status": "ok"}
 def _ingest_and_maybe_schedule(db: Session, inbound: InboundMessage, background: BackgroundTasks) -> None:
     result = IngestionService(db).handle(inbound)
     if result.status == "professional" and result.user_id is not None:
-        background.add_task(dispatch_agent_run, inbound, result.user_id)
+        background.add_task(dispatch_agent_run, inbound, result.user_id, result.record_id)
 
 
 @router.get("/whatsapp")

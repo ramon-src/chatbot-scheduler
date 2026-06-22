@@ -8,7 +8,9 @@ separately via `dispatch_agent_run` (scheduled on FastAPI BackgroundTasks).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,6 +18,7 @@ from sqlalchemy.orm import Session
 # Imported at module scope so tests can monkeypatch it.
 from app.agents.simplifica_agent import build_simplifica_agent
 from app.channels.inbound import InboundMessage
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import get_logger
 from app.models.inbound_message import InboundMessageRecord
@@ -68,19 +71,26 @@ class IngestionService:
         )
 
 
-async def dispatch_agent_run(inbound: InboundMessage, user_id: UUID) -> None:
-    """Run the professional agent for an already-recorded message.
+async def dispatch_agent_run(inbound: InboundMessage, user_id: UUID, record_id: UUID) -> None:
+    """Run the professional agent for an already-recorded message, exactly once.
 
     Opens its own DB session (it runs after the webhook response, on a
-    BackgroundTask). Best-effort: logs and swallows any failure.
+    BackgroundTask). Idempotent: if the record is gone or already marked
+    `agent_run_at`, it returns without running — this is what makes the
+    opportunistic re-dispatch safe against double runs. Best-effort otherwise.
     """
     db = SessionLocal()
     try:
+        record = db.get(InboundMessageRecord, record_id)
+        if record is None or record.agent_run_at is not None:
+            return
         user = db.get(User, user_id)
         if user is None:
             return
         agent = build_simplifica_agent()
         await process_professional_message(db, agent, user, inbound.text, inbound.sender_phone)
+        record.agent_run_at = datetime.now(ZoneInfo(settings.TIMEZONE))
+        db.commit()
     except Exception:  # noqa: BLE001 - background work must never raise
         logger.warning("agent run for inbound message failed", exc_info=True)
     finally:
