@@ -1,5 +1,5 @@
-import pytest
 import pydantic_ai.models
+import pytest
 
 
 @pytest.fixture(autouse=True)
