@@ -44,6 +44,19 @@ def weekly_series():
     db.close()
 
 
+def test_template_row_excluded_in_its_own_week(weekly_series):
+    """Template falls inside the queried window — filter must hide it, showing only the occurrence."""
+    db, client, template, start = weekly_series
+    svc = EventService(db)
+    window_end = start + timedelta(days=1)
+    svc.ensure_occurrences(DEV_USER_ID, start, window_end)
+    rows = svc.list_events_in_range(DEV_USER_ID, start, window_end)
+    # Without the ~and_ filter this returns 2 rows (template + occurrence); with it, exactly 1.
+    assert len(rows) == 1
+    assert rows[0].parent_event_id == template.id, "returned row must be the occurrence, not the template"
+    assert template.id not in [r.id for r in rows], "template must be excluded from the listing"
+
+
 def test_series_appears_in_later_weeks_and_template_hidden(weekly_series):
     db, client, template, start = weekly_series
     svc = EventService(db)
