@@ -40,26 +40,6 @@ def _feature(what: str) -> str:
 # =============================================================================
 
 @pytest.mark.skip(reason=READY)
-async def test_recurring_weekly_event(live):
-    """'sessão semanal toda terça às 9h' → create_recurring_event com RRULE semanal."""
-    from app.models.event import Event
-
-    result = await live.send(f"marca uma sessão semanal com a {live.client_name} toda terça às 9h")
-    recs = live.tool_returns(result, "create_recurring_event")
-    assert recs and recs[-1]["success"] is True, f"output: {result.output!r}"
-
-    ev = (
-        live.db.query(Event)
-        .filter(Event.user_id == live.user_id, Event.is_recurring == True)  # noqa: E712
-        .order_by(Event.created_at.desc())
-        .first()
-    )
-    assert ev is not None and ev.google_event_id
-    assert "FREQ=WEEKLY" in (ev.recurrence_rule or "")
-    assert ev.start_time.astimezone(live.tz).hour == 9
-
-
-@pytest.mark.skip(reason=READY)
 async def test_schedule_with_explicit_duration(live):
     """'sessão de 30 minutos' → create_event com duração de 30 min no banco."""
     from app.models.event import Event

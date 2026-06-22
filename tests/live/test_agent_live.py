@@ -52,6 +52,26 @@ async def test_schedule_creates_event_at_local_time(live):
     assert local.hour == 10, f"expected 10h local, got {local.isoformat()}"
 
 
+async def test_recurring_weekly_event(live):
+    """'sessão semanal toda terça às 9h' → create_recurring_event with a weekly RRULE."""
+    from app.models.event import Event
+
+    result = await live.send(f"marca uma sessão semanal com a {live.client_name} toda terça às 9h")
+    recs = live.tool_returns(result, "create_recurring_event")
+    assert recs, f"create_recurring_event was not called. Output: {result.output!r}"
+    assert recs[-1]["success"] is True, recs[-1]
+
+    ev = (
+        live.db.query(Event)
+        .filter(Event.user_id == live.user_id, Event.is_recurring == True)  # noqa: E712
+        .order_by(Event.created_at.desc())
+        .first()
+    )
+    assert ev is not None and ev.google_event_id, "recurring event not persisted/created on Google"
+    assert "FREQ=WEEKLY" in (ev.recurrence_rule or ""), ev.recurrence_rule
+    assert ev.start_time.astimezone(live.tz).hour == 9
+
+
 async def test_list_shows_local_time(live):
     """Regression for the UTC display bug: the list tool message must say 10h, not 13h."""
     result = await live.send("o que eu tenho para amanhã?")
@@ -85,9 +105,13 @@ async def test_cancel_removes_event(live):
     assert cancels, f"cancel_event was not called. Output: {result.output!r}"
     assert cancels[-1]["success"] is True, cancels[-1]
 
-    active = (
-        live.db.query(Event)
-        .filter(Event.user_id == live.user_id, Event.status != "cancelled")
-        .count()
-    )
-    assert active == 0, "event was not cancelled in the Postgres mirror"
+    # Scope the check to tomorrow: other tests in this module create events on
+    # other days (e.g. the weekly recurring one), so a global count would be wrong.
+    tomorrow = (datetime.now(live.tz) + timedelta(days=1)).date()
+    active_tomorrow = [
+        e for e in live.db.query(Event).filter(
+            Event.user_id == live.user_id, Event.status != "cancelled"
+        )
+        if e.start_time.astimezone(live.tz).date() == tomorrow
+    ]
+    assert active_tomorrow == [], "tomorrow's event was not cancelled in the Postgres mirror"
