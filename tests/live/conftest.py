@@ -48,11 +48,17 @@ def _purge(db):
     """Delete the test user's Google calendar/events + all its DB rows."""
     from app.core.config import settings
     from app.models.calendar import Calendar
+    from app.models.chat_session import ChatMessage, ChatSession
     from app.models.client import Client
     from app.models.event import Event
     from app.models.google_credential import GoogleCredential
     from app.models.user import User
     from app.services.calendar_provider import build_calendar_access
+
+    # conversation memory rows (messages cascade via session_id)
+    for s in db.query(ChatSession).filter(ChatSession.user_id == TEST_USER_ID):
+        db.query(ChatMessage).filter(ChatMessage.session_id == s.id).delete(synchronize_session=False)
+    db.query(ChatSession).filter(ChatSession.user_id == TEST_USER_ID).delete(synchronize_session=False)
 
     user = db.get(User, TEST_USER_ID)
     if user is not None:
@@ -103,14 +109,31 @@ def live():
     db.commit()
 
     async def send(msg: str):
+        """Single-turn: no conversation memory (each call is independent)."""
         agent = build_simplifica_agent()
         user = db.get(User, TEST_USER_ID)
-        deps = _build_agent_deps(db, user)
+        deps = _build_agent_deps(db, user, history_summary=None)
         return await agent.run(msg, deps=deps)
+
+    async def send_memory(msg: str):
+        """Multi-turn: mirrors the route — replays prior history + persists the turn."""
+        from app.agents.history import to_model_messages
+        from app.api.agent_routes import DEV_PHONE, RAW_HISTORY_LIMIT
+        from app.services.chat_history_service import ChatHistoryService
+
+        agent = build_simplifica_agent()
+        user = db.get(User, TEST_USER_ID)
+        history = ChatHistoryService(db)
+        session = history.get_or_create_session(TEST_USER_ID, DEV_PHONE)
+        message_history = to_model_messages(history.recent_messages(session, RAW_HISTORY_LIMIT))
+        deps = _build_agent_deps(db, user, history_summary=session.summary)
+        result = await agent.run(msg, deps=deps, message_history=message_history)
+        history.append_turn(session, msg, result.output)
+        return result
 
     try:
         yield SimpleNamespace(
-            send=send, db=db, tool_returns=_tool_returns,
+            send=send, send_memory=send_memory, db=db, tool_returns=_tool_returns,
             tz=TZ, user_id=TEST_USER_ID,
             client_name=TEST_CLIENT_NAME, client_phone=TEST_CLIENT_PHONE,
         )
