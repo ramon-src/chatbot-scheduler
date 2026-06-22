@@ -94,8 +94,13 @@ class EventService:
         self.db.refresh(event)
         return event
 
-    def cancel_event(self, event: Event) -> Event:
+    def get_event(self, event_id) -> Event | None:
+        return self.db.get(Event, event_id)
+
+    def cancel_event(self, event: Event, billable: bool | None = None) -> Event:
         event.status = EventStatus.CANCELLED.value
+        if billable is not None:
+            event.billable = billable
         self.db.commit()
         self.db.refresh(event)
         return event

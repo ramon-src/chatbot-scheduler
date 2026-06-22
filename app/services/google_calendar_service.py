@@ -70,6 +70,25 @@ class GoogleCalendarService:
     def cancel_event(self, event_id) -> None:
         self._events.delete(calendarId=self._calendar_id, eventId=event_id).execute()
 
+    def cancel_occurrence(self, series_google_event_id: str, occurrence_start) -> None:
+        """Best-effort cancel of one instance of a recurring Google event.
+
+        Locates the instance starting at `occurrence_start` and marks it
+        cancelled. A no-op if the instance cannot be found.
+        """
+        resp = self._events.instances(
+            calendarId=self._calendar_id, eventId=series_google_event_id
+        ).execute()
+        target = occurrence_start.isoformat()
+        for inst in resp.get("items", []):
+            inst_start = inst.get("start", {}).get("dateTime")
+            if inst_start and inst_start[:19] == target[:19]:
+                self._events.patch(
+                    calendarId=self._calendar_id, eventId=inst["id"],
+                    body={"status": "cancelled"},
+                ).execute()
+                return
+
     def create_calendar(self, summary: str) -> dict:
         body = {"summary": summary, "timeZone": self._tz}
         created = self._resource.calendars().insert(body=body).execute()

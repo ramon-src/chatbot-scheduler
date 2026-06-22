@@ -143,8 +143,9 @@ async def test_cancel_event_ambiguous_period_cancels_nothing():
 
 async def test_cancel_event_filters_to_this_client_and_cancels_both_sides():
     client = _client()
-    other = SimpleNamespace(client_id=uuid4(), google_event_id="other", title="x")
-    mine = SimpleNamespace(client_id=client.id, google_event_id="g-mine", title="Sessão - Maria Silva")
+    other = SimpleNamespace(client_id=uuid4(), google_event_id="other", title="x", parent_event_id=None)
+    mine = SimpleNamespace(client_id=client.id, google_event_id="g-mine", title="Sessão - Maria Silva",
+                           parent_event_id=None)
     cal = MagicMock()
     es = MagicMock()
     es.list_events_in_range.return_value = [other, mine]  # only `mine` belongs to client
@@ -152,7 +153,7 @@ async def test_cancel_event_filters_to_this_client_and_cancels_both_sides():
     out = await cancel_event_impl(deps, client_phone=client.phone, period="this_week")
     assert out["success"] is True
     cal.cancel_event.assert_called_once_with("g-mine")
-    es.cancel_event.assert_called_once_with(mine)
+    es.cancel_event.assert_called_once_with(mine, billable=False)
 
 
 def test_not_connected_returns_fresh_dict():

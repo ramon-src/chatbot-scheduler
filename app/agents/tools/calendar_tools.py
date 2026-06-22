@@ -154,6 +154,7 @@ async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
 async def cancel_event_impl(
     deps: AgentDeps, *, client_name=None, client_phone=None,
     period: str = "this_week", reason: str | None = None,
+    charge: bool | None = None,
 ) -> dict:
     if deps.calendar_service is None or deps.event_service is None:
         return _not_connected()
@@ -166,6 +167,7 @@ async def cancel_event_impl(
         return {"success": False, "data": None,
                 "message": "Não entendi o período. Tente 'hoje' ou 'esta semana'."}
 
+    deps.event_service.ensure_occurrences(deps.user_id, start, end)
     events = [
         e for e in deps.event_service.list_events_in_range(deps.user_id, start, end)
         if e.client_id == client.id
@@ -179,12 +181,19 @@ async def cancel_event_impl(
                 "message": "Encontrei mais de um compromisso nesse período. Pode me dizer o dia exato?"}
 
     event = events[0]
-    # Google is the source of truth: cancel there first. If the local mirror
-    # update then fails, the authoritative cancellation already succeeded — keep
-    # the success response rather than confusing the user with a false failure.
-    deps.calendar_service.cancel_event(event.google_event_id)
+    billable = charge if charge is not None else False
+    # Google is the source of truth: cancel there first (best-effort).
     try:
-        deps.event_service.cancel_event(event)
+        if event.parent_event_id is not None:
+            parent = deps.event_service.get_event(event.parent_event_id)
+            if parent is not None and parent.google_event_id:
+                deps.calendar_service.cancel_occurrence(parent.google_event_id, event.start_time)
+        elif event.google_event_id:
+            deps.calendar_service.cancel_event(event.google_event_id)
+    except Exception:
+        pass  # mirror is authoritative; degrade silently
+    try:
+        deps.event_service.cancel_event(event, billable=billable)
     except Exception:
         pass
     first = client.name.split()[0]
@@ -232,8 +241,13 @@ def register_calendar_tools(agent) -> None:
     async def cancel_event(
         ctx: RunContext[AgentDeps], client_name: str | None = None,
         client_phone: str | None = None, period: str = "this_week", reason: str | None = None,
+        charge: bool | None = None,
     ) -> dict:
-        """Cancela o compromisso de um cliente num período. Exige cliente cadastrado."""
+        """Cancela o compromisso de um cliente num período. Exige cliente cadastrado.
+
+        charge: se True, mantém a sessão cobrável mesmo cancelada.
+        """
         return await cancel_event_impl(
-            ctx.deps, client_name=client_name, client_phone=client_phone, period=period, reason=reason
+            ctx.deps, client_name=client_name, client_phone=client_phone,
+            period=period, reason=reason, charge=charge,
         )
