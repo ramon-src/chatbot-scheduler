@@ -13,6 +13,7 @@ from app.core.database import SessionLocal
 from app.main import app
 from app.models.chat_session import ChatMessage, ChatSession
 from app.models.client import Client
+from app.services import agent_runner
 
 DEV_USER_ID = UUID("550e8400-e29b-41d4-a716-446655440000")
 TEST_PHONE = "+5500000000001"
@@ -51,7 +52,7 @@ def test_endpoint_persists_turn_and_replays_history(monkeypatch):
         shared_agent = _build()
 
     monkeypatch.setattr(agent_routes, "build_simplifica_agent", lambda: shared_agent)
-    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None)
 
     try:
         with shared_agent.override(model=FunctionModel(scripted)):
@@ -98,7 +99,7 @@ def test_unknown_user_gets_answer_without_persisting_memory(monkeypatch):
         shared_agent = _build()
 
     monkeypatch.setattr(agent_routes, "build_simplifica_agent", lambda: shared_agent)
-    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None)
 
     async def scripted(messages, info):
         return ModelResponse(parts=[TextPart("ok")])
@@ -136,9 +137,9 @@ def test_overflow_messages_are_folded_into_the_rolling_summary(monkeypatch):
         shared_agent = _build()
 
     monkeypatch.setattr(agent_routes, "build_simplifica_agent", lambda: shared_agent)
-    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None)
     # Don't hit the real LLM for summaries — fold deterministically.
-    monkeypatch.setattr(agent_routes, "summarize_conversation", AsyncMock(side_effect=fake_summarize))
+    monkeypatch.setattr(agent_runner, "summarize_conversation", AsyncMock(side_effect=fake_summarize))
 
     async def scripted(messages, info):
         return ModelResponse(parts=[TextPart("ok")])
@@ -206,7 +207,7 @@ def test_failed_registration_records_the_turn_and_leaves_no_orphan(monkeypatch):
 
     shared = _shared_agent()
     monkeypatch.setattr(agent_routes, "build_simplifica_agent", lambda: shared)
-    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None)
 
     try:
         with shared.override(model=FunctionModel(model_fn)):
@@ -255,7 +256,7 @@ def test_turn_persist_failure_still_returns_the_answer(monkeypatch):
 
     shared = _shared_agent()
     monkeypatch.setattr(agent_routes, "build_simplifica_agent", lambda: shared)
-    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None)
     # Make turn persistence blow up.
     from app.services.chat_history_service import ChatHistoryService
 
