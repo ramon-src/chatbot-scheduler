@@ -39,6 +39,27 @@ def _purge_inbound(db, *ids):
     db.commit()
 
 
+def _purge_chat(sender_phone):
+    from app.models.chat_session import ChatMessage, ChatSession
+    db = SessionLocal()
+    try:
+        sessions = db.query(ChatSession).filter(
+            ChatSession.user_id == DEV_USER_ID,
+            ChatSession.phone_number == sender_phone,
+        ).all()
+        for s in sessions:
+            db.query(ChatMessage).filter(ChatMessage.session_id == s.id).delete(
+                synchronize_session=False
+            )
+        db.query(ChatSession).filter(
+            ChatSession.user_id == DEV_USER_ID,
+            ChatSession.phone_number == sender_phone,
+        ).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+
+
 @pytest.fixture
 def db_user_phone():
     db = SessionLocal()
@@ -120,6 +141,7 @@ async def test_dispatch_agent_run_persists_a_turn(db_user_phone, monkeypatch):
         agent = build_simplifica_agent()
     monkeypatch.setattr(ingestion_service, "build_simplifica_agent", lambda: agent)
 
+    _purge_chat(PRO_PHONE)
     inbound = _make("MID-RUN-1", PRO_PHONE)
     db = SessionLocal()
     try:
@@ -143,14 +165,8 @@ async def test_dispatch_agent_run_persists_a_turn(db_user_phone, monkeypatch):
         ).order_by(ChatMessage.created_at.asc()).all()
         assert [m.message_type for m in msgs] == ["user", "assistant"]
         assert msgs[1].content == "resposta via webhook"
-        db.query(ChatMessage).filter(ChatMessage.session_id == session.id).delete(
-            synchronize_session=False
-        )
-        db.query(ChatSession).filter(ChatSession.id == session.id).delete(
-            synchronize_session=False
-        )
-        db.commit()
     finally:
+        _purge_chat(PRO_PHONE)
         _purge_inbound(db, "MID-RUN-1")
         db.close()
 
@@ -171,6 +187,7 @@ async def test_dispatch_marks_agent_run_at(db_user_phone, monkeypatch):
         agent = build_simplifica_agent()
     monkeypatch.setattr(ingestion_service, "build_simplifica_agent", lambda: agent)
 
+    _purge_chat(PRO_PHONE)
     db = SessionLocal()
     try:
         res = IngestionService(db).handle(_make("MID-MARK-1", PRO_PHONE))
@@ -188,6 +205,7 @@ async def test_dispatch_marks_agent_run_at(db_user_phone, monkeypatch):
         rec = db.get(InboundMessageRecord, record_id)
         assert rec.agent_run_at is not None
     finally:
+        _purge_chat(PRO_PHONE)
         _purge_inbound(db, "MID-MARK-1")
         db.close()
 
@@ -207,6 +225,7 @@ async def test_dispatch_is_skipped_when_already_run(db_user_phone, monkeypatch):
 
     monkeypatch.setattr(ingestion_service, "process_professional_message", boom)
 
+    _purge_chat(PRO_PHONE)
     db = SessionLocal()
     try:
         res = IngestionService(db).handle(_make("MID-SKIP-1", PRO_PHONE))
@@ -222,6 +241,7 @@ async def test_dispatch_is_skipped_when_already_run(db_user_phone, monkeypatch):
 
     db = SessionLocal()
     try:
+        _purge_chat(PRO_PHONE)
         _purge_inbound(db, "MID-SKIP-1")
     finally:
         db.close()
