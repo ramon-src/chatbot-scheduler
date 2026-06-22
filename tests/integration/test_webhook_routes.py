@@ -10,6 +10,8 @@ from app.main import app
 from app.models.inbound_message import InboundMessageRecord
 from app.models.user import User
 
+META_PRO_PHONE = "5551888887777"
+
 DEV_USER_ID = UUID("550e8400-e29b-41d4-a716-446655440000")
 PRO_PHONE = "+5551955554444"
 
@@ -145,3 +147,71 @@ def test_evolution_duplicate_is_acked_without_reprocessing(monkeypatch):
             db.close()
     finally:
         _purge("WH-DUP")
+
+
+def test_evolution_malformed_body_is_acked_200(monkeypatch):
+    monkeypatch.setattr(settings, "EVOLUTION_WEBHOOK_TOKEN", None)  # token check disabled
+    client = TestClient(app)
+    r = client.post(
+        "/webhooks/evolution",
+        content=b"not json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 200
+
+
+def test_meta_inbound_known_professional_schedules_agent(monkeypatch):
+    monkeypatch.setattr(settings, "WHATSAPP_APP_SECRET", None)  # signature check disabled
+
+    # Point dev user's phone at the Meta test number
+    setup = SessionLocal()
+    user = setup.get(User, DEV_USER_ID)
+    previous = user.phone
+    user.phone = "+" + META_PRO_PHONE
+    setup.commit()
+    setup.close()
+
+    scheduled = {}
+
+    async def fake_dispatch(inbound, user_id):
+        scheduled["user_id"] = user_id
+        scheduled["text"] = inbound.text
+
+    meta_payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "metadata": {"display_phone_number": META_PRO_PHONE},
+                            "messages": [
+                                {
+                                    "from": META_PRO_PHONE,
+                                    "id": "WAMID-PRO",
+                                    "timestamp": "1718900000",
+                                    "type": "text",
+                                    "text": {"body": "oi pelo meta"},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        ],
+    }
+
+    with patch("app.api.webhook_routes.dispatch_agent_run", side_effect=fake_dispatch):
+        client = TestClient(app)
+        try:
+            r = client.post("/webhooks/whatsapp", json=meta_payload)
+            assert r.status_code == 200
+            assert scheduled.get("user_id") == DEV_USER_ID
+            assert scheduled.get("text") == "oi pelo meta"
+        finally:
+            _purge("WAMID-PRO")
+            restore = SessionLocal()
+            u = restore.get(User, DEV_USER_ID)
+            u.phone = previous
+            restore.commit()
+            restore.close()

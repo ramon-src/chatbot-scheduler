@@ -11,6 +11,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.channels.evolution_adapter import EvolutionInboundAdapter
+from app.channels.inbound import InboundMessage
 from app.channels.meta_adapter import (
     MetaInboundAdapter,
     valid_meta_signature,
@@ -31,7 +32,7 @@ _meta = MetaInboundAdapter()
 _OK = {"status": "ok"}
 
 
-def _ingest_and_maybe_schedule(db: Session, inbound, background: BackgroundTasks) -> None:
+def _ingest_and_maybe_schedule(db: Session, inbound: InboundMessage, background: BackgroundTasks) -> None:
     result = IngestionService(db).handle(inbound)
     if result.status == "professional" and result.user_id is not None:
         background.add_task(dispatch_agent_run, inbound, result.user_id)
@@ -59,12 +60,20 @@ async def meta_inbound(
     if not valid_meta_signature(
         raw_body, request.headers.get("X-Hub-Signature-256"), settings.WHATSAPP_APP_SECRET
     ):
+        logger.warning("meta_inbound: rejected webhook — invalid Meta signature")
         return Response(status_code=403)
-    payload = await request.json()
-    inbound = _meta.parse(payload)
-    if inbound is None:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        logger.warning("meta_inbound: malformed JSON body — acking 200 (%s)", exc)
         return _OK
-    _ingest_and_maybe_schedule(db, inbound, background)
+    try:
+        inbound = _meta.parse(payload)
+        if inbound is None:
+            return _OK
+        _ingest_and_maybe_schedule(db, inbound, background)
+    except Exception as exc:
+        logger.warning("meta_inbound: service error — acking 200 (%s)", exc)
     return _OK
 
 
@@ -76,10 +85,18 @@ async def evolution_inbound(
     if expected:
         provided = request.headers.get("X-Webhook-Token") or request.query_params.get("token")
         if provided != expected:
+            logger.warning("evolution_inbound: rejected webhook — invalid Evolution token")
             return Response(status_code=403)
-    payload = await request.json()
-    inbound = _evolution.parse(payload)
-    if inbound is None:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        logger.warning("evolution_inbound: malformed JSON body — acking 200 (%s)", exc)
         return _OK
-    _ingest_and_maybe_schedule(db, inbound, background)
+    try:
+        inbound = _evolution.parse(payload)
+        if inbound is None:
+            return _OK
+        _ingest_and_maybe_schedule(db, inbound, background)
+    except Exception as exc:
+        logger.warning("evolution_inbound: service error — acking 200 (%s)", exc)
     return _OK
