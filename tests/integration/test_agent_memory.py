@@ -1,6 +1,6 @@
 # tests/integration/test_agent_memory.py
 from unittest.mock import AsyncMock, patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelResponse, TextPart
@@ -84,6 +84,38 @@ def test_endpoint_persists_turn_and_replays_history(monkeypatch):
             db.close()
     finally:
         _cleanup()
+
+
+def test_unknown_user_gets_answer_without_persisting_memory(monkeypatch):
+    """Regression: an unknown user_id must NOT 500 (the chat_sessions FK needs a
+    real user). It gets a one-shot answer and creates no session."""
+    unknown_id = uuid4()
+
+    with patch("app.agents.simplifica_agent.get_llm_model", return_value=FunctionModel(_noop_model)):
+        from app.agents.simplifica_agent import build_simplifica_agent as _build
+        shared_agent = _build()
+
+    monkeypatch.setattr(agent_routes, "build_simplifica_agent", lambda: shared_agent)
+    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+
+    async def scripted(messages, info):
+        return ModelResponse(parts=[TextPart("ok")])
+
+    with shared_agent.override(model=FunctionModel(scripted)):
+        client = TestClient(app)
+        resp = client.post(
+            f"{settings.API_PREFIX}/agent/message",
+            json={"user_id": str(unknown_id), "message": "oi", "phone_number": "+5500000009999"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["content"]
+
+    db = SessionLocal()
+    try:
+        sessions = db.query(ChatSession).filter(ChatSession.user_id == unknown_id).count()
+        assert sessions == 0, "a session was persisted for an unknown user"
+    finally:
+        db.close()
 
 
 def test_overflow_messages_are_folded_into_the_rolling_summary(monkeypatch):

@@ -61,25 +61,35 @@ def _build_agent_deps(db: Session, user, history_summary: str | None = None) -> 
 
 
 async def _maybe_update_summary(history: ChatHistoryService, session) -> None:
-    """Fold any messages that fell out of the raw window into the rolling summary."""
-    pending = history.unsummarized_overflow(session, keep_recent=RAW_HISTORY_LIMIT)
-    if not pending:
-        return
+    """Fold any messages that fell out of the raw window into the rolling summary.
+
+    Entirely best-effort: any failure (summary LLM call OR the surrounding DB
+    queries/commit) is logged and swallowed, never breaking the already-computed
+    chat response.
+    """
     try:
+        pending = history.unsummarized_overflow(session, keep_recent=RAW_HISTORY_LIMIT)
+        if not pending:
+            return
         new_summary = await summarize_conversation(session.summary, pending)
+        history.fold_summary(session, new_summary, (session.summarized_count or 0) + len(pending))
     except Exception:  # noqa: BLE001 - summary is best-effort; never break the chat
         logger.warning("conversation summary update failed", exc_info=True)
-        return
-    history.fold_summary(session, new_summary, (session.summarized_count or 0) + len(pending))
 
 
 @router.post("/message", response_model=AgentMessageResponse)
 async def agent_message(payload: AgentMessageRequest, db: Session = Depends(get_db)):
     agent = build_simplifica_agent()
     user = db.get(User, payload.user_id)
+
+    # Conversation memory only applies to a known user (the chat_sessions FK
+    # requires a real users row). Unknown users still get a one-shot answer.
     if user is None:
-        # unknown user: run with no calendar/user context (client tools still scope by user_id)
-        user = User(id=payload.user_id, name="profissional", email=None)
+        deps = _build_agent_deps(
+            db, User(id=payload.user_id, name="profissional", email=None), history_summary=None
+        )
+        result = await agent.run(payload.message, deps=deps)
+        return AgentMessageResponse(content=result.output)
 
     history = ChatHistoryService(db)
     session = history.get_or_create_session(payload.user_id, payload.phone_number or DEV_PHONE)

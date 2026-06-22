@@ -103,11 +103,3 @@ def test_fold_summary_advances_marker_and_stops_resummarizing(db):
     svc.append_turn(s, "p4", "r4")  # 10 messages; keep 3 -> overflow up to idx 7
     pending2 = svc.unsummarized_overflow(s, keep_recent=3)
     assert [m.content for m in pending2] == ["r2", "p3"]
-
-
-def test_set_summary_persists(db):
-    svc = ChatHistoryService(db)
-    s = svc.get_or_create_session(DEV_USER_ID, TEST_PHONE)
-    svc.set_summary(s, "Cliente Ana foi cadastrada; cobrança dia 15.")
-    db.refresh(s)
-    assert s.summary == "Cliente Ana foi cadastrada; cobrança dia 15."

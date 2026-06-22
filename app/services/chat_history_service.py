@@ -52,11 +52,16 @@ class ChatHistoryService:
         return session
 
     def recent_messages(self, session: ChatSession, limit: int) -> list[ChatMessage]:
-        """The most recent `limit` messages, in chronological (ascending) order."""
+        """The most recent `limit` messages, in chronological (ascending) order.
+
+        Secondary sort by id keeps a *total* order identical to
+        `unsummarized_overflow`, so the kept-window and the summarized prefix stay
+        aligned even if two rows share created_at.
+        """
         rows = (
             self.db.query(ChatMessage)
             .filter(ChatMessage.session_id == session.id)
-            .order_by(ChatMessage.created_at.desc())
+            .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
             .limit(limit)
             .all()
         )
@@ -68,6 +73,11 @@ class ChatHistoryService:
 
         These are the only rows that need summarizing this turn — already-folded
         messages (tracked by `summarized_count`) are skipped, so cost stays bounded.
+
+        `keep_recent` must be constant per session: the marker math assumes the
+        kept window never shrinks/grows between turns (it is a module constant in
+        the route). The id tiebreaker mirrors `recent_messages` so the offset
+        window aligns exactly with the kept window.
         """
         total = (
             self.db.query(ChatMessage)
@@ -81,7 +91,7 @@ class ChatHistoryService:
         return (
             self.db.query(ChatMessage)
             .filter(ChatMessage.session_id == session.id)
-            .order_by(ChatMessage.created_at.asc())
+            .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
             .offset(already)
             .limit(overflow)
             .all()
@@ -108,10 +118,6 @@ class ChatHistoryService:
             )
         )
         session.updated_at = now
-        self.db.commit()
-
-    def set_summary(self, session: ChatSession, summary: str) -> None:
-        session.summary = summary
         self.db.commit()
 
     def fold_summary(self, session: ChatSession, summary: str, summarized_count: int) -> None:
