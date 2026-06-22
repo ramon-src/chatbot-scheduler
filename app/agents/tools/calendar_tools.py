@@ -201,6 +201,32 @@ async def cancel_event_impl(
             "message": f"Cancelei o compromisso de {first}."}
 
 
+async def set_session_charge_impl(
+    deps: AgentDeps, *, client_name=None, client_phone=None, session_date: str, charge: bool,
+) -> dict:
+    if deps.event_service is None:
+        return _not_connected()
+    client, error = await _resolve_client(deps, client_name, client_phone)
+    if error:
+        return error
+    from datetime import date as _date
+    try:
+        day = _date.fromisoformat(session_date)
+    except ValueError:
+        return {"success": False, "data": None,
+                "message": "Não entendi a data da sessão. Use AAAA-MM-DD."}
+    event = deps.event_service.find_client_session_on_date(deps.user_id, client.id, day)
+    if event is None:
+        first = client.name.split()[0]
+        return {"success": False, "data": None,
+                "message": f"Não encontrei sessão de {first} nessa data."}
+    deps.event_service.set_billable(event, charge)
+    first = client.name.split()[0]
+    verb = "vou cobrar" if charge else "não vou cobrar"
+    return {"success": True, "data": {"client": client.name, "charge": charge},
+            "message": f"Pronto: {verb} a sessão de {first} nessa data."}
+
+
 def register_calendar_tools(agent) -> None:
     from pydantic_ai import RunContext
 
@@ -250,4 +276,15 @@ def register_calendar_tools(agent) -> None:
         return await cancel_event_impl(
             ctx.deps, client_name=client_name, client_phone=client_phone,
             period=period, reason=reason, charge=charge,
+        )
+
+    @agent.tool
+    async def set_session_charge(
+        ctx: RunContext[AgentDeps], session_date: str, charge: bool,
+        client_name: str | None = None, client_phone: str | None = None,
+    ) -> dict:
+        """Define se uma sessão (cancelada/no-show) é cobrável. session_date em AAAA-MM-DD."""
+        return await set_session_charge_impl(
+            ctx.deps, client_name=client_name, client_phone=client_phone,
+            session_date=session_date, charge=charge,
         )

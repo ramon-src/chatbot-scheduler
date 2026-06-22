@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta  # noqa: F401
 from uuid import UUID
 
 from dateutil.rrule import rrulestr
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models.calendar import Calendar
@@ -101,6 +101,28 @@ class EventService:
         event.status = EventStatus.CANCELLED.value
         if billable is not None:
             event.billable = billable
+        self.db.commit()
+        self.db.refresh(event)
+        return event
+
+    def find_client_session_on_date(self, user_id: UUID, client_id, day: date) -> Event | None:
+        from sqlalchemy import Date as SqlDate
+        from sqlalchemy import cast
+        return self.db.query(Event).filter(
+            and_(
+                Event.user_id == user_id,
+                Event.client_id == client_id,
+                Event.status != EventStatus.CANCELLED.value,
+                ~and_(Event.is_recurring == True, Event.parent_event_id.is_(None)),  # noqa: E712
+                or_(
+                    Event.occurrence_date == day,
+                    cast(Event.start_time, SqlDate) == day,
+                ),
+            )
+        ).order_by(Event.start_time).first()
+
+    def set_billable(self, event: Event, value: bool) -> Event:
+        event.billable = value
         self.db.commit()
         self.db.refresh(event)
         return event
