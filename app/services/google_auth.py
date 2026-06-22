@@ -7,6 +7,8 @@ from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from sqlalchemy.orm import Session
 
+from app.models.google_credential import GoogleCredential
+
 GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
@@ -17,7 +19,7 @@ def service_account_available(settings) -> bool:
     )
 
 
-def build_service_account_credentials(settings):
+def build_service_account_credentials(settings) -> Credentials | None:
     """Build server-to-server (JWT) credentials from the SA env vars, or None."""
     if not service_account_available(settings):
         return None
@@ -28,8 +30,6 @@ def build_service_account_credentials(settings):
         "token_uri": "https://oauth2.googleapis.com/token",
     }
     return service_account.Credentials.from_service_account_info(info, scopes=GOOGLE_CALENDAR_SCOPES)
-
-from app.models.google_credential import GoogleCredential
 
 
 class GoogleAuthError(Exception):
