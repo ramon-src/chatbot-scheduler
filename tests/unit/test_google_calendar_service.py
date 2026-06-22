@@ -126,6 +126,15 @@ def test_create_calendar_inserts_and_returns_id():
     assert body["timeZone"] == "America/Sao_Paulo"
 
 
+def test_delete_calendar_calls_calendars_delete():
+    resource = MagicMock()
+    svc = GoogleCalendarService(resource, timezone="America/Sao_Paulo")
+    svc.delete_calendar("cal-del@group.calendar.google.com")
+    kwargs = resource.calendars.return_value.delete.call_args.kwargs
+    assert kwargs["calendarId"] == "cal-del@group.calendar.google.com"
+    resource.calendars.return_value.delete.return_value.execute.assert_called_once()
+
+
 def test_share_calendar_inserts_acl_writer_rule():
     resource = MagicMock()
     svc = GoogleCalendarService(resource, timezone="America/Sao_Paulo")

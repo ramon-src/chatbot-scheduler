@@ -81,6 +81,9 @@ class GoogleCalendarService:
             body={"role": role, "scope": {"type": "user", "value": email}},
         ).execute()
 
+    def delete_calendar(self, calendar_id: str) -> None:
+        self._resource.calendars().delete(calendarId=calendar_id).execute()
+
     @staticmethod
     def build_weekly_rrule(weekdays, until) -> str:
         rule = "RRULE:FREQ=WEEKLY"
