@@ -77,6 +77,19 @@ async def _maybe_update_summary(history: ChatHistoryService, session) -> None:
         logger.warning("conversation summary update failed", exc_info=True)
 
 
+def _persist_turn(db: Session, history: ChatHistoryService, session, user_text, assistant_text) -> bool:
+    """Persist the turn best-effort. A DB failure here must not drop the answer the
+    user already received — log, roll back to a clean session, and report failure
+    so the (now-unsafe) summary step is skipped."""
+    try:
+        history.append_turn(session, user_text, assistant_text)
+        return True
+    except Exception:  # noqa: BLE001 - never 500 after the response is computed
+        logger.warning("failed to persist conversation turn", exc_info=True)
+        db.rollback()
+        return False
+
+
 @router.post("/message", response_model=AgentMessageResponse)
 async def agent_message(payload: AgentMessageRequest, db: Session = Depends(get_db)):
     agent = build_simplifica_agent()
@@ -98,7 +111,7 @@ async def agent_message(payload: AgentMessageRequest, db: Session = Depends(get_
     deps = _build_agent_deps(db, user, history_summary=session.summary)
     result = await agent.run(payload.message, deps=deps, message_history=message_history)
 
-    history.append_turn(session, payload.message, result.output)
-    await _maybe_update_summary(history, session)
+    if _persist_turn(db, history, session, payload.message, result.output):
+        await _maybe_update_summary(history, session)
 
     return AgentMessageResponse(content=result.output)

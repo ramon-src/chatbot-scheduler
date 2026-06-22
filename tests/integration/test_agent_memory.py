@@ -1,9 +1,10 @@
 # tests/integration/test_agent_memory.py
+from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
-from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import FunctionModel
 
 from app.api import agent_routes
@@ -11,6 +12,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.main import app
 from app.models.chat_session import ChatMessage, ChatSession
+from app.models.client import Client
 
 DEV_USER_ID = UUID("550e8400-e29b-41d4-a716-446655440000")
 TEST_PHONE = "+5500000000001"
@@ -163,5 +165,113 @@ def test_overflow_messages_are_folded_into_the_rolling_summary(monkeypatch):
             assert session.summarized_count > 0
         finally:
             db.close()
+    finally:
+        _cleanup()
+
+
+def _shared_agent():
+    with patch("app.agents.simplifica_agent.get_llm_model", return_value=FunctionModel(_noop_model)):
+        from app.agents.simplifica_agent import build_simplifica_agent as _build
+        return _build()
+
+
+def test_failed_registration_records_the_turn_and_leaves_no_orphan(monkeypatch):
+    """A 'cadastro deu errado' (duplicate phone) must: return 200, record the
+    user+assistant turn in history, and persist NO orphan client."""
+    dup_phone = "+5551911112299"
+    # seed the conflicting client
+    setup = SessionLocal()
+    try:
+        setup.query(Client).filter(Client.phone == dup_phone).delete(synchronize_session=False)
+        setup.add(Client(
+            user_id=DEV_USER_ID, name="Cliente Existente", phone=dup_phone,
+            invoice_day=10, consult_price=Decimal("200"), is_active=True,
+        ))
+        setup.commit()
+    finally:
+        setup.close()
+    _cleanup()
+
+    def model_fn(messages, info):
+        already_called = any(
+            isinstance(p, ToolReturnPart)
+            for m in messages for p in getattr(m, "parts", [])
+        )
+        if not already_called:
+            return ModelResponse(parts=[ToolCallPart(
+                tool_name="create_client",
+                args={"name": "Nome Novo", "phone": dup_phone, "invoice_day": 5, "consult_price": 100.0},
+            )])
+        return ModelResponse(parts=[TextPart("Não consegui cadastrar: já existe um cliente com esse telefone.")])
+
+    shared = _shared_agent()
+    monkeypatch.setattr(agent_routes, "build_simplifica_agent", lambda: shared)
+    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+
+    try:
+        with shared.override(model=FunctionModel(model_fn)):
+            client = TestClient(app)
+            resp = client.post(
+                f"{settings.API_PREFIX}/agent/message",
+                json={"user_id": str(DEV_USER_ID), "message": "cadastra a Nome Novo", "phone_number": TEST_PHONE},
+            )
+        assert resp.status_code == 200
+
+        db = SessionLocal()
+        try:
+            # no orphan: only the seeded client carries that phone
+            assert db.query(Client).filter(Client.phone == dup_phone).count() == 1
+            assert db.query(Client).filter(
+                Client.user_id == DEV_USER_ID, Client.name == "Nome Novo"
+            ).count() == 0
+            # the failed turn IS recorded
+            session = db.query(ChatSession).filter(
+                ChatSession.user_id == DEV_USER_ID, ChatSession.phone_number == TEST_PHONE
+            ).one()
+            msgs = db.query(ChatMessage).filter(
+                ChatMessage.session_id == session.id
+            ).order_by(ChatMessage.created_at.asc()).all()
+            assert [m.message_type for m in msgs] == ["user", "assistant"]
+            assert "já existe" in msgs[1].content.lower()
+        finally:
+            db.close()
+    finally:
+        _cleanup()
+        cleanup = SessionLocal()
+        try:
+            cleanup.query(Client).filter(Client.phone == dup_phone).delete(synchronize_session=False)
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_turn_persist_failure_still_returns_the_answer(monkeypatch):
+    """If persisting the turn raises (DB hiccup), the user still gets their answer
+    (no 500) — the failure is swallowed and logged."""
+    _cleanup()
+
+    async def scripted(messages, info):
+        return ModelResponse(parts=[TextPart("aqui está sua resposta")])
+
+    shared = _shared_agent()
+    monkeypatch.setattr(agent_routes, "build_simplifica_agent", lambda: shared)
+    monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+    # Make turn persistence blow up.
+    from app.services.chat_history_service import ChatHistoryService
+
+    def _boom(self, *a, **k):
+        raise RuntimeError("db down while persisting turn")
+
+    monkeypatch.setattr(ChatHistoryService, "append_turn", _boom)
+
+    try:
+        with shared.override(model=FunctionModel(scripted)):
+            client = TestClient(app)
+            resp = client.post(
+                f"{settings.API_PREFIX}/agent/message",
+                json={"user_id": str(DEV_USER_ID), "message": "oi", "phone_number": TEST_PHONE},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["content"] == "aqui está sua resposta"
     finally:
         _cleanup()
