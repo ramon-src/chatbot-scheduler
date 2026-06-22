@@ -20,7 +20,12 @@ from app.channels.meta_adapter import (
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.logging import get_logger
-from app.services.ingestion_service import IngestionService, dispatch_agent_run
+from app.services.ingestion_service import (
+    IngestionService,
+    build_inbound_from_record,
+    dispatch_agent_run,
+    find_orphan_professional_messages,
+)
 
 logger = get_logger(__name__)
 
@@ -35,7 +40,13 @@ _OK = {"status": "ok"}
 def _ingest_and_maybe_schedule(db: Session, inbound: InboundMessage, background: BackgroundTasks) -> None:
     result = IngestionService(db).handle(inbound)
     if result.status == "professional" and result.user_id is not None:
-        background.add_task(dispatch_agent_run, inbound, result.user_id)
+        background.add_task(dispatch_agent_run, inbound, result.user_id, result.record_id)
+    # Opportunistic crash recovery: re-dispatch professional runs that never
+    # completed. dispatch_agent_run's agent_run_at guard makes this double-safe.
+    for orphan in find_orphan_professional_messages(db):
+        background.add_task(
+            dispatch_agent_run, build_inbound_from_record(orphan), orphan.user_id, orphan.id
+        )
 
 
 @router.get("/whatsapp")

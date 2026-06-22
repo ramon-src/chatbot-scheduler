@@ -39,6 +39,27 @@ def _purge_inbound(db, *ids):
     db.commit()
 
 
+def _purge_chat(sender_phone):
+    from app.models.chat_session import ChatMessage, ChatSession
+    db = SessionLocal()
+    try:
+        sessions = db.query(ChatSession).filter(
+            ChatSession.user_id == DEV_USER_ID,
+            ChatSession.phone_number == sender_phone,
+        ).all()
+        for s in sessions:
+            db.query(ChatMessage).filter(ChatMessage.session_id == s.id).delete(
+                synchronize_session=False
+            )
+        db.query(ChatSession).filter(
+            ChatSession.user_id == DEV_USER_ID,
+            ChatSession.phone_number == sender_phone,
+        ).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+
+
 @pytest.fixture
 def db_user_phone():
     db = SessionLocal()
@@ -120,9 +141,17 @@ async def test_dispatch_agent_run_persists_a_turn(db_user_phone, monkeypatch):
         agent = build_simplifica_agent()
     monkeypatch.setattr(ingestion_service, "build_simplifica_agent", lambda: agent)
 
+    _purge_chat(PRO_PHONE)
     inbound = _make("MID-RUN-1", PRO_PHONE)
+    db = SessionLocal()
+    try:
+        res = IngestionService(db).handle(inbound)
+        record_id = res.record_id
+    finally:
+        db.close()
+
     with agent.override(model=FunctionModel(scripted)):
-        await dispatch_agent_run(inbound, DEV_USER_ID)
+        await dispatch_agent_run(inbound, DEV_USER_ID, record_id)
 
     db = SessionLocal()
     try:
@@ -136,12 +165,143 @@ async def test_dispatch_agent_run_persists_a_turn(db_user_phone, monkeypatch):
         ).order_by(ChatMessage.created_at.asc()).all()
         assert [m.message_type for m in msgs] == ["user", "assistant"]
         assert msgs[1].content == "resposta via webhook"
-        db.query(ChatMessage).filter(ChatMessage.session_id == session.id).delete(
-            synchronize_session=False
-        )
-        db.query(ChatSession).filter(ChatSession.id == session.id).delete(
-            synchronize_session=False
-        )
-        db.commit()
     finally:
+        _purge_chat(PRO_PHONE)
+        _purge_inbound(db, "MID-RUN-1")
+        db.close()
+
+
+async def test_dispatch_marks_agent_run_at(db_user_phone, monkeypatch):
+    from app.models.inbound_message import InboundMessageRecord
+
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None, raising=False)
+
+    def _noop(messages, info):
+        return ModelResponse(parts=[TextPart("noop")])
+
+    async def scripted(messages, info):
+        return ModelResponse(parts=[TextPart("ok")])
+
+    with patch("app.agents.simplifica_agent.get_llm_model", return_value=FunctionModel(_noop)):
+        from app.agents.simplifica_agent import build_simplifica_agent
+        agent = build_simplifica_agent()
+    monkeypatch.setattr(ingestion_service, "build_simplifica_agent", lambda: agent)
+
+    _purge_chat(PRO_PHONE)
+    db = SessionLocal()
+    try:
+        res = IngestionService(db).handle(_make("MID-MARK-1", PRO_PHONE))
+        assert res.status == "professional"
+        record_id = res.record_id
+    finally:
+        db.close()
+
+    inbound = _make("MID-MARK-1", PRO_PHONE)
+    with agent.override(model=FunctionModel(scripted)):
+        await dispatch_agent_run(inbound, DEV_USER_ID, record_id)
+
+    db = SessionLocal()
+    try:
+        rec = db.get(InboundMessageRecord, record_id)
+        assert rec.agent_run_at is not None
+    finally:
+        _purge_chat(PRO_PHONE)
+        _purge_inbound(db, "MID-MARK-1")
+        db.close()
+
+
+async def test_dispatch_is_skipped_when_already_run(db_user_phone, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.core.config import settings as _settings
+    from app.models.inbound_message import InboundMessageRecord
+
+    ran = {"called": False}
+
+    async def boom(*a, **k):
+        ran["called"] = True
+        raise AssertionError("agent must not run for an already-marked record")
+
+    monkeypatch.setattr(ingestion_service, "process_professional_message", boom)
+
+    _purge_chat(PRO_PHONE)
+    db = SessionLocal()
+    try:
+        res = IngestionService(db).handle(_make("MID-SKIP-1", PRO_PHONE))
+        rec = db.get(InboundMessageRecord, res.record_id)
+        rec.agent_run_at = datetime.now(ZoneInfo(_settings.TIMEZONE))
+        db.commit()
+        record_id = res.record_id
+    finally:
+        db.close()
+
+    await dispatch_agent_run(_make("MID-SKIP-1", PRO_PHONE), DEV_USER_ID, record_id)
+    assert ran["called"] is False
+
+    db = SessionLocal()
+    try:
+        _purge_chat(PRO_PHONE)
+        _purge_inbound(db, "MID-SKIP-1")
+    finally:
+        db.close()
+
+
+async def test_second_dispatch_for_same_record_does_not_run_again(db_user_phone, monkeypatch):
+    """Atomic claim (UPDATE WHERE agent_run_at IS NULL) ensures exactly-once.
+
+    First call runs the agent (real FunctionModel). Second call finds agent_run_at
+    already set → UPDATE claims 0 rows → returns without invoking process_professional_message.
+    Only one assistant turn must exist.
+    """
+    monkeypatch.setattr(ingestion_service, "build_calendar_access", lambda db, user, settings: None, raising=False)
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None)
+
+    def _noop(messages, info):
+        return ModelResponse(parts=[TextPart("noop")])
+
+    async def scripted(messages, info):
+        return ModelResponse(parts=[TextPart("exactly-once text")])
+
+    with patch("app.agents.simplifica_agent.get_llm_model", return_value=FunctionModel(_noop)):
+        from app.agents.simplifica_agent import build_simplifica_agent
+        agent = build_simplifica_agent()
+    monkeypatch.setattr(ingestion_service, "build_simplifica_agent", lambda: agent)
+
+    _purge_chat(PRO_PHONE)
+    inbound = _make("MID-ONCE-1", PRO_PHONE)
+    db = SessionLocal()
+    try:
+        res = IngestionService(db).handle(inbound)
+        record_id = res.record_id
+    finally:
+        db.close()
+
+    # First dispatch — runs the agent and claims the row.
+    with agent.override(model=FunctionModel(scripted)):
+        await dispatch_agent_run(inbound, DEV_USER_ID, record_id)
+
+    # Second dispatch — monkeypatch process_professional_message to assert it's NOT called.
+    async def must_not_be_called(*a, **k):
+        raise AssertionError("process_professional_message must not be called on second dispatch")
+
+    monkeypatch.setattr(ingestion_service, "process_professional_message", must_not_be_called)
+    await dispatch_agent_run(inbound, DEV_USER_ID, record_id)  # must return silently
+
+    db = SessionLocal()
+    try:
+        session = db.query(ChatSession).filter(
+            ChatSession.user_id == DEV_USER_ID,
+            ChatSession.phone_number == inbound.sender_phone,
+        ).first()
+        assert session is not None
+        assistant_turns = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session.id, ChatMessage.message_type == "assistant")
+            .count()
+        )
+        assert assistant_turns == 1, f"expected 1 assistant turn, got {assistant_turns}"
+    finally:
+        _purge_chat(PRO_PHONE)
+        _purge_inbound(db, "MID-ONCE-1")
         db.close()
