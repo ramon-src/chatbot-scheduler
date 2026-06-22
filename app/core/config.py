@@ -77,6 +77,16 @@ class Settings(BaseSettings):
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = Field(default=None, env="WHATSAPP_PHONE_NUMBER_ID")
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: Optional[str] = Field(default=None, env="WHATSAPP_WEBHOOK_VERIFY_TOKEN")
     WHATSAPP_API_URL: str = Field(default="https://graph.facebook.com/v18.0", env="WHATSAPP_API_URL")
+    # Meta app secret for X-Hub-Signature-256 verification (optional; disables check if unset)
+    WHATSAPP_APP_SECRET: Optional[str] = Field(default=None, env="WHATSAPP_APP_SECRET")
+
+    # =============================================================================
+    # EVOLUTION API (default WhatsApp provider)
+    # =============================================================================
+    EVOLUTION_API_URL: Optional[str] = Field(default=None, env="EVOLUTION_API_URL")
+    EVOLUTION_API_KEY: Optional[str] = Field(default=None, env="EVOLUTION_API_KEY")
+    EVOLUTION_INSTANCE: Optional[str] = Field(default=None, env="EVOLUTION_INSTANCE")
+    EVOLUTION_WEBHOOK_TOKEN: Optional[str] = Field(default=None, env="EVOLUTION_WEBHOOK_TOKEN")
     
     # =============================================================================
     # SECURITY

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.api.agent_routes import router as agent_router
+from app.api.webhook_routes import router as webhook_router
 
 # Setup logging
 setup_logging()
@@ -64,6 +65,7 @@ async def root():
 # ROUTERS
 # =============================================================================
 app.include_router(agent_router, prefix=settings.API_PREFIX)
+app.include_router(webhook_router)
 
 # =============================================================================
 # APPLICATION LIFECYCLE
