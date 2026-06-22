@@ -93,10 +93,10 @@ def live():
     """Isolated test user + one client; a send() helper that drives the real agent."""
     _require_live()
     from app.agents.simplifica_agent import build_simplifica_agent
-    from app.api.agent_routes import _build_agent_deps
     from app.core.database import SessionLocal
     from app.models.client import Client
     from app.models.user import User
+    from app.services.agent_runner import build_agent_deps
 
     db = SessionLocal()
     _purge(db)  # clean slate
@@ -112,13 +112,13 @@ def live():
         """Single-turn: no conversation memory (each call is independent)."""
         agent = build_simplifica_agent()
         user = db.get(User, TEST_USER_ID)
-        deps = _build_agent_deps(db, user, history_summary=None)
+        deps = build_agent_deps(db, user, history_summary=None)
         return await agent.run(msg, deps=deps)
 
     async def send_memory(msg: str):
         """Multi-turn: mirrors the route — replays prior history + persists the turn."""
         from app.agents.history import to_model_messages
-        from app.api.agent_routes import DEV_PHONE, RAW_HISTORY_LIMIT
+        from app.services.agent_runner import DEV_PHONE, RAW_HISTORY_LIMIT
         from app.services.chat_history_service import ChatHistoryService
 
         agent = build_simplifica_agent()
@@ -126,7 +126,7 @@ def live():
         history = ChatHistoryService(db)
         session = history.get_or_create_session(TEST_USER_ID, DEV_PHONE)
         message_history = to_model_messages(history.recent_messages(session, RAW_HISTORY_LIMIT))
-        deps = _build_agent_deps(db, user, history_summary=session.summary)
+        deps = build_agent_deps(db, user, history_summary=session.summary)
         result = await agent.run(msg, deps=deps, message_history=message_history)
         history.append_turn(session, msg, result.output)
         return result
