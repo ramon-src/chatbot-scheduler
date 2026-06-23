@@ -160,6 +160,23 @@ def _snapshot(db, inputs: CaseInputs) -> DbSnapshot:
     return DbSnapshot(clients=clients, events=events, lead=lead)
 
 
+@dataclass
+class SummaryInputs:
+    """Inputs for a summarizer-cleaning eval case."""
+
+    messages: list[tuple[str, str]]  # (role, content); role in {"user", "assistant"}
+    existing_summary: str | None = None
+
+
+async def run_summary_case(inputs: SummaryInputs, model) -> str:
+    """Fold a dirty transcript through the real summarizer and return the summary string."""
+    from app.agents.summarizer import summarize_conversation
+    from app.models.chat_session import ChatMessage
+
+    msgs = [ChatMessage(message_type=role, content=content) for role, content in inputs.messages]
+    return await summarize_conversation(inputs.existing_summary, msgs, model=model)
+
+
 async def run_case(inputs: CaseInputs, model, *, db_factory=SessionLocal) -> CaseResult:
     """Drive a multi-turn conversation against the chosen agent with `model` pinned."""
     from app.agents.lead_agent import build_lead_agent

@@ -14,7 +14,7 @@ from evals.models import build_eval_model
 from evals.report import summarize
 
 
-def main(model_alias: str = "gpt-5.4-mini", case_filter: str | None = None) -> int:
+def main(model_alias: str = "gpt-5.4-mini", case_filter: str | None = None, suite: str = "agent") -> int:
     if not os.environ.get("RUN_EVAL"):
         print("set RUN_EVAL=1 to run evals (real LLM, costs tokens)")
         return 0
@@ -23,15 +23,26 @@ def main(model_alias: str = "gpt-5.4-mini", case_filter: str | None = None) -> i
         print("OPENAI_API_KEY not set — skipping")
         return 0
 
-    from evals.harness import run_case
-
     model = build_eval_model(model_alias)
-    dataset = build_google_free_dataset()
+
+    if suite == "summary":
+        from evals.datasets.summary_cleaning import build_summary_cleaning_dataset
+        from evals.harness import run_summary_case
+
+        dataset = build_summary_cleaning_dataset()
+
+        async def task(inputs):
+            return await run_summary_case(inputs, model)
+    else:
+        from evals.harness import run_case
+
+        dataset = build_google_free_dataset()
+
+        async def task(inputs):
+            return await run_case(inputs, model)
+
     if case_filter:
         dataset.cases = [c for c in dataset.cases if case_filter in c.name]
-
-    async def task(inputs):
-        return await run_case(inputs, model)
 
     report = dataset.evaluate_sync(task, max_concurrency=1)
     print(summarize(report))
@@ -53,5 +64,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="gpt-5.4-mini")
     p.add_argument("--case", default=None)
+    p.add_argument("--suite", default="agent", choices=["agent", "summary"])
     args = p.parse_args()
-    sys.exit(main(args.model, args.case))
+    sys.exit(main(args.model, args.case, args.suite))
