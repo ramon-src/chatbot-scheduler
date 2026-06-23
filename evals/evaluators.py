@@ -56,3 +56,28 @@ class NoLeakage(Evaluator):
         if "{" in text and "}" in text and '":' in text:  # JSON-ish leak
             return False
         return True
+
+
+@dataclass
+class DbState(Evaluator):
+    check: dict
+
+    def evaluate(self, ctx: EvaluatorContext) -> bool:
+        db = ctx.output.db
+        c = self.check
+        if "client_named" in c:
+            if not any(c["client_named"] in cl["name"] for cl in db.clients):
+                return False
+        if "client_price" in c:
+            sub, price = c["client_price"]
+            hit = [cl for cl in db.clients if sub in cl["name"]]
+            if not hit or not _num_eq(hit[0]["consult_price"], price):
+                return False
+        if "lead_converted" in c:
+            if not (db.lead and db.lead.get("converted") == c["lead_converted"]):
+                return False
+        if "event_cancelled_billable" in c:
+            want = c["event_cancelled_billable"]
+            if not any(e["status"] == "cancelled" and e["billable"] == want for e in db.events):
+                return False
+        return True
