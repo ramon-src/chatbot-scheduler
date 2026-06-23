@@ -100,6 +100,7 @@ def _purge(db) -> None:
     from app.models.client import Client
     from app.models.event import Event
     from app.models.lead import Lead
+    from app.models.user import User
     for s in db.query(ChatSession).filter(
         (ChatSession.user_id == EVAL_USER_ID) | (ChatSession.phone_number == EVAL_PHONE)
     ):
@@ -110,6 +111,7 @@ def _purge(db) -> None:
     db.query(Event).filter(Event.user_id == EVAL_USER_ID).delete(synchronize_session=False)
     db.query(Client).filter(Client.user_id == EVAL_USER_ID).delete(synchronize_session=False)
     db.query(Lead).filter(Lead.phone == EVAL_PHONE).delete(synchronize_session=False)
+    db.query(User).filter(User.phone == EVAL_PHONE).delete(synchronize_session=False)
     db.commit()
 
 
