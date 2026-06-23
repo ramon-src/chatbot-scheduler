@@ -141,7 +141,16 @@ async def dispatch_agent_run(inbound: InboundMessage, user_id: UUID, record_id: 
         if user is None:
             return
         agent = build_simplifica_agent()
-        await process_professional_message(db, agent, user, inbound.text, inbound.sender_phone)
+        reply = await process_professional_message(
+            db, agent, user, inbound.text, inbound.sender_phone
+        )
+        # Send the reply back over WhatsApp (best-effort). This runs only on the
+        # webhook path; the HTTP /agent/message route returns the reply in its
+        # response and never reaches here, so there is no double-delivery.
+        if reply and reply.strip():
+            EvolutionOutboundAdapter(settings).send(
+                OutboundMessage(to_phone=inbound.sender_phone, text=reply)
+            )
     except Exception:  # noqa: BLE001 - background work must never raise
         logger.warning("agent run for inbound message failed", exc_info=True)
     finally:

@@ -171,6 +171,54 @@ async def test_dispatch_agent_run_persists_a_turn(db_user_phone, monkeypatch):
         db.close()
 
 
+async def test_dispatch_agent_run_sends_reply_outbound(db_user_phone, monkeypatch):
+    """The webhook path sends the professional's reply back over WhatsApp (Evolution)."""
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(ingestion_service, "build_calendar_access", lambda db, user, settings: None, raising=False)
+    monkeypatch.setattr(agent_runner, "build_calendar_access", lambda db, user, settings: None)
+
+    def _noop(messages, info):
+        return ModelResponse(parts=[TextPart("noop")])
+
+    async def scripted(messages, info):
+        return ModelResponse(parts=[TextPart("resposta pro profissional")])
+
+    with patch("app.agents.simplifica_agent.get_llm_model", return_value=FunctionModel(_noop)):
+        from app.agents.simplifica_agent import build_simplifica_agent
+        agent = build_simplifica_agent()
+    monkeypatch.setattr(ingestion_service, "build_simplifica_agent", lambda: agent)
+
+    sender = MagicMock()
+    sender.send.return_value = True
+    monkeypatch.setattr(ingestion_service, "EvolutionOutboundAdapter", lambda settings: sender)
+
+    _purge_chat(PRO_PHONE)
+    inbound = _make("MID-OUT-1", PRO_PHONE)
+    db = SessionLocal()
+    try:
+        _purge_inbound(db, "MID-OUT-1")  # self-heal if a prior failed run left the record
+        res = IngestionService(db).handle(inbound)
+        record_id = res.record_id
+    finally:
+        db.close()
+
+    with agent.override(model=FunctionModel(scripted)):
+        await dispatch_agent_run(inbound, DEV_USER_ID, record_id)
+
+    sender.send.assert_called_once()
+    sent = sender.send.call_args[0][0]
+    assert sent.to_phone == PRO_PHONE
+    assert sent.text == "resposta pro profissional"
+
+    db = SessionLocal()
+    try:
+        _purge_chat(PRO_PHONE)
+        _purge_inbound(db, "MID-OUT-1")
+    finally:
+        db.close()
+
+
 async def test_dispatch_marks_agent_run_at(db_user_phone, monkeypatch):
     from app.models.inbound_message import InboundMessageRecord
 
