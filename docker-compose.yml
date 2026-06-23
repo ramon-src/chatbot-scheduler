@@ -156,7 +156,7 @@ services:
   # host.docker.internal. If you run the app inside compose instead, change
   # WEBHOOK_GLOBAL_URL to http://app:8000/webhooks/evolution.
   evolution:
-    image: atendai/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api:v2.3.7
     container_name: simplificapsi_evolution
     restart: unless-stopped
     ports:
