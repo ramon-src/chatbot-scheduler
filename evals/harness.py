@@ -3,6 +3,7 @@ collecting tool calls, transcript, DB snapshot, tokens and latency."""
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 from uuid import UUID
@@ -58,6 +59,18 @@ class CaseResult:
     model: str
 
 
+def _coerce_args(raw) -> dict:
+    """Return a dict from ToolCallPart.args, which may be a dict or a JSON string."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
 def extract_tool_calls(messages) -> list[ToolCall]:
     """Pair ToolCallParts (args) with their ToolReturnParts (success) from a run."""
     calls: dict[str, ToolCall] = {}
@@ -65,7 +78,7 @@ def extract_tool_calls(messages) -> list[ToolCall]:
     for m in messages:
         for part in getattr(m, "parts", []):
             if isinstance(part, ToolCallPart):
-                args = part.args if isinstance(part.args, dict) else {}
+                args = _coerce_args(part.args)
                 key = f"{part.tool_name}:{len(order)}"
                 calls[key] = ToolCall(name=part.tool_name, args=args, success=None)
                 order.append(key)

@@ -22,6 +22,21 @@ def test_extract_tool_calls_pairs_calls_with_returns():
     assert calls[0].success is True
 
 
+def test_extract_tool_calls_parses_json_string_args():
+    # args arrives as a JSON string (common with OpenAI real runs)
+    msgs = [
+        ModelResponse(parts=[ToolCallPart(tool_name="create_client", args='{"consult_price": 200}')]),
+        ModelRequest(parts=[ToolReturnPart(
+            tool_name="create_client",
+            content={"success": True, "data": {}, "message": "ok"},
+        )]),
+    ]
+    calls = extract_tool_calls(msgs)
+    assert len(calls) == 1
+    assert calls[0].args["consult_price"] == 200
+    assert calls[0].success is True
+
+
 async def test_run_case_drives_lead_conversation_and_collects(monkeypatch):
     # Scripted model: always replies with text (no tools) so we exercise the driver,
     # not the real LLM. Build the lead agent under a patched get_llm_model.
