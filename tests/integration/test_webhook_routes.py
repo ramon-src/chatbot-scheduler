@@ -93,6 +93,29 @@ def test_evolution_unknown_number_parks_lead(monkeypatch):
         _purge("WH-LEAD")
 
 
+def test_evolution_event_suffixed_url_is_handled(monkeypatch):
+    """Evolution's global webhook (webhookByEvents) appends the event name to the
+    URL, e.g. /webhooks/evolution/messages-upsert. That must still be ingested."""
+    monkeypatch.setattr(settings, "EVOLUTION_WEBHOOK_TOKEN", None)
+    client = TestClient(app)
+    try:
+        r = client.post(
+            "/webhooks/evolution/messages-upsert",
+            json=_evolution_payload("WH-SUFFIX", "5551911110000@s.whatsapp.net"),
+        )
+        assert r.status_code == 200
+        db = SessionLocal()
+        try:
+            rec = db.query(InboundMessageRecord).filter(
+                InboundMessageRecord.provider_message_id == "WH-SUFFIX"
+            ).one()
+            assert rec.classification == "lead"
+        finally:
+            db.close()
+    finally:
+        _purge("WH-SUFFIX")
+
+
 def test_evolution_known_professional_schedules_agent(monkeypatch):
     monkeypatch.setattr(settings, "EVOLUTION_WEBHOOK_TOKEN", None)
     # point dev user's phone at PRO_PHONE so it resolves

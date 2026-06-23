@@ -114,3 +114,15 @@ async def evolution_inbound(
     except Exception as exc:
         logger.warning("evolution_inbound: service error — acking 200 (%s)", exc)
     return _OK
+
+
+@router.post("/evolution/{event}")
+async def evolution_inbound_by_event(
+    event: str, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)
+):
+    """Evolution's global webhook (webhookByEvents=true) appends the event name to
+    the URL, e.g. POST /webhooks/evolution/messages-upsert. Funnel those to the same
+    handler — the event type is read from the JSON body, so the path segment (`event`)
+    is informational only.
+    """
+    return await evolution_inbound(request, background, db)
