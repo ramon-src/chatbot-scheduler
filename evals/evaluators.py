@@ -81,3 +81,25 @@ class DbState(Evaluator):
             if not any(e["status"] == "cancelled" and e["billable"] == want for e in db.events):
                 return False
         return True
+
+
+@dataclass
+class ExcludesAll(Evaluator):
+    """Pass when NONE of the tokens appear in the string output (case-insensitive)."""
+
+    tokens: list[str]
+
+    def evaluate(self, ctx: EvaluatorContext) -> bool:
+        text = (ctx.output or "").lower()
+        return all(t.lower() not in text for t in self.tokens)
+
+
+@dataclass
+class IncludesAll(Evaluator):
+    """Pass when EVERY token appears in the string output (case-insensitive)."""
+
+    tokens: list[str]
+
+    def evaluate(self, ctx: EvaluatorContext) -> bool:
+        text = (ctx.output or "").lower()
+        return all(t.lower() in text for t in self.tokens)
