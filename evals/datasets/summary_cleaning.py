@@ -1,4 +1,10 @@
-"""Summary-cleaning eval cases: junk removed, core facts kept."""
+"""Summary-cleaning eval cases: junk removed, core facts kept.
+
+NOTE: ExcludesAll/IncludesAll are case-insensitive SUBSTRING checks. Keep the
+inputs free of collisions — a phone/date/price that contains an excluded token
+(e.g. "200", "300") or a name that is a substring of another would silently
+break an assertion. Choose distinctive tokens when adding cases.
+"""
 
 from __future__ import annotations
 
