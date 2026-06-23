@@ -96,6 +96,38 @@ infra: ## Subir APENAS postgres + redis (sem app)
 infra-stop: ## Parar a infra
 	@$(DOCKER_COMPOSE) stop postgres redis
 
+# =============================================================================
+# EVOLUTION API (provedor WhatsApp para teste end-to-end)
+# =============================================================================
+EVOLUTION_URL := http://localhost:8080
+EVOLUTION_KEY := evolution-dev-key
+EVOLUTION_INSTANCE := simplificapsi
+
+evolution: ## Subir o Evolution API (+ postgres dedicado) no Docker
+	@echo "📲 Subindo Evolution API..."
+	@$(DOCKER_COMPOSE) up -d evolution_postgres evolution
+	@echo "✅ Evolution em $(EVOLUTION_URL) (apikey: $(EVOLUTION_KEY)). Aguarde ~15s o boot e rode 'make evolution-instance'."
+
+evolution-stop: ## Parar o Evolution API
+	@$(DOCKER_COMPOSE) stop evolution evolution_postgres
+
+evolution-logs: ## Acompanhar os logs do Evolution
+	@$(DOCKER_COMPOSE) logs -f evolution
+
+evolution-instance: ## Criar a instância e gerar o QR
+	@curl -s -X POST $(EVOLUTION_URL)/instance/create \
+		-H "apikey: $(EVOLUTION_KEY)" -H "Content-Type: application/json" \
+		-d '{"instanceName":"$(EVOLUTION_INSTANCE)","integration":"WHATSAPP-BAILEYS","qrcode":true}' \
+		| python3 -m json.tool
+
+evolution-qr: ## Reexibir o QR/pairing code pra conectar o WhatsApp
+	@curl -s $(EVOLUTION_URL)/instance/connect/$(EVOLUTION_INSTANCE) \
+		-H "apikey: $(EVOLUTION_KEY)" | python3 -m json.tool
+
+evolution-status: ## Estado de conexão da instância
+	@curl -s $(EVOLUTION_URL)/instance/connectionState/$(EVOLUTION_INSTANCE) \
+		-H "apikey: $(EVOLUTION_KEY)" | python3 -m json.tool
+
 migrate: ## Aplicar migrações Alembic (local, contra a infra)
 	@echo "🗄️ Applying migrations..."
 	@$(UV) run alembic upgrade head
