@@ -48,7 +48,7 @@ def build_google_free_dataset() -> Dataset:
             name="cliente_slot_filling",  # REGRESSÃO do bug de coleta fragmentada
             inputs=CaseInputs(agent="pro", messages=[
                 "quero cadastrar um cliente",
-                "981321543",
+                "51 98132-1543",
                 "joao silva",
                 "10",
                 "200",

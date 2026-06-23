@@ -201,8 +201,13 @@ async def run_case(inputs: CaseInputs, model, *, db_factory=SessionLocal) -> Cas
         latency_ms = int((time.monotonic() - t0) * 1000)
         snapshot = _snapshot(db, inputs)
     finally:
-        _purge(db)
-        db.close()
+        try:
+            db.rollback()
+            _purge(db)
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
 
     return CaseResult(
         tool_calls=extract_tool_calls(all_messages),

@@ -33,7 +33,7 @@ def main(model_alias: str = "gpt-5.4-mini", case_filter: str | None = None) -> i
     async def task(inputs):
         return await run_case(inputs, model)
 
-    report = dataset.evaluate_sync(task)
+    report = dataset.evaluate_sync(task, max_concurrency=1)
     print(summarize(report))
     # exit non-zero if any case failed or errored (CI/regression gate)
     failed = sum(1 for c in report.cases if not _case_passed(c))
