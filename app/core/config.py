@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     EVOLUTION_API_KEY: Optional[str] = Field(default=None, env="EVOLUTION_API_KEY")
     EVOLUTION_INSTANCE: Optional[str] = Field(default=None, env="EVOLUTION_INSTANCE")
     EVOLUTION_WEBHOOK_TOKEN: Optional[str] = Field(default=None, env="EVOLUTION_WEBHOOK_TOKEN")
+    # DEV-ONLY: if set, every outbound reply is redirected to this number instead of
+    # the original recipient. Lets you simulate inbound from fake numbers and still
+    # receive the agent's replies on your own phone. Leave empty in production.
+    DEV_OUTBOUND_OVERRIDE_PHONE: Optional[str] = Field(default=None, env="DEV_OUTBOUND_OVERRIDE_PHONE")
     
     # =============================================================================
     # SECURITY

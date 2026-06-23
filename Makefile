@@ -103,6 +103,12 @@ EVOLUTION_URL := http://localhost:8080
 EVOLUTION_KEY := evolution-dev-key
 EVOLUTION_INSTANCE := simplificapsi
 
+sim: ## Disparar um inbound de WhatsApp (fire-and-forget; usage: make sim PHONE=5551990001234 MSG="oi, como funciona?")
+	@( curl -s -X POST http://localhost:$(API_PORT)/webhooks/evolution \
+		-H "Content-Type: application/json" \
+		-d "{\"event\":\"messages.upsert\",\"instance\":\"$(EVOLUTION_INSTANCE)\",\"data\":{\"key\":{\"remoteJid\":\"$(PHONE)@s.whatsapp.net\",\"fromMe\":false,\"id\":\"SIM-$$(uuidgen)\"},\"message\":{\"conversation\":\"$(MSG)\"},\"messageTimestamp\":1750000000,\"pushName\":\"Lead Sim\"}}" >/dev/null 2>&1 & )
+	@echo " ✅ disparado PHONE=$(PHONE) — terminal livre; a resposta chega no seu Whats quando o agente responder"
+
 evolution: ## Subir o Evolution API (+ postgres dedicado) no Docker
 	@echo "📲 Subindo Evolution API..."
 	@$(DOCKER_COMPOSE) up -d evolution_postgres evolution
