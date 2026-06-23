@@ -288,8 +288,8 @@ class ClientService:
         offset = (page - 1) * per_page
         clients = query.order_by(Client.name).offset(offset).limit(per_page).all()
         
-        # Calcular total de páginas
-        total_pages = (total + per_page - 1) // per_page
+        # Calcular total de páginas (mínimo 1 — uma lista vazia ainda é "página 1 de 1")
+        total_pages = max(1, (total + per_page - 1) // per_page)
         
         return ClientListResponse(
             clients=[ClientResponse.from_orm(client) for client in clients],
