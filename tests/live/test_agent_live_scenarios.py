@@ -205,21 +205,36 @@ async def test_deactivate_client(live):
 # =============================================================================
 
 async def test_reschedule_event(live):
-    """'muda a sessão da Maria de amanhã para as 15h' → reschedule_event + resposta "Remarquei"."""
+    """'muda a sessão da Maria de amanhã para as 17h' → reschedule_event + resposta "Remarquei".
+
+    Uses 8h→17h to avoid the 10h/15h slots reserved by test_cancel_ambiguous_asks_for_day
+    and test_conflict_detection_warns (which both create events at 10h under the same
+    module-scoped fixture, causing the agent to find multiple 10h events and ask for
+    disambiguation instead of rescheduling).
+    """
+    from app.models.client import Client
     from app.models.event import Event
 
-    await live.send(f"agenda a {live.client_name} amanhã às 10h")
-    result = await live.send(f"muda a sessão da {live.client_name} de amanhã para as 15h")
+    client = live.db.query(Client).filter(
+        Client.user_id == live.user_id, Client.name == live.client_name
+    ).first()
+
+    await live.send(f"agenda a {live.client_name} amanhã às 8h")
+    result = await live.send(f"muda a sessão da {live.client_name} de amanhã para as 17h")
     updates = live.tool_returns(result, "reschedule_event")
     assert updates and updates[-1]["success"] is True, f"output: {result.output!r}"
     assert "remarquei" in result.output.lower(), f"expected 'Remarquei' in output: {result.output!r}"
     ev = (
         live.db.query(Event)
-        .filter(Event.user_id == live.user_id, Event.status != "cancelled")
+        .filter(
+            Event.user_id == live.user_id,
+            Event.client_id == client.id,
+            Event.status != "cancelled",
+        )
         .order_by(Event.created_at.desc())
         .first()
     )
-    assert ev.start_time.astimezone(live.tz).hour == 15
+    assert ev.start_time.astimezone(live.tz).hour == 17
 
 
 async def test_conflict_detection_warns(live):
