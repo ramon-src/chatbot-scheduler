@@ -199,6 +199,29 @@ async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
             "message": f"Você tem {len(items)} compromisso(s): {lines}."}
 
 
+def _find_single_event_for_client(deps, client, period: str):
+    """Return (event, error). Exactly one is non-None. Mirrors cancel's resolution:
+    0 matches -> not-found; >1 -> ask for the exact day."""
+    try:
+        start, end = calculate_date_range(period, deps.current_datetime)
+    except ValueError:
+        return None, {"success": False, "data": None,
+                      "message": "Não entendi o período. Tente 'hoje' ou 'esta semana'."}
+    deps.event_service.ensure_occurrences(deps.user_id, start, end)
+    events = [
+        e for e in deps.event_service.list_events_in_range(deps.user_id, start, end)
+        if e.client_id == client.id
+    ]
+    if not events:
+        first = client.name.split()[0]
+        return None, {"success": False, "data": None,
+                      "message": f"Não encontrei compromisso de {first} nesse período."}
+    if len(events) > 1:
+        return None, {"success": False, "data": {"count": len(events)},
+                      "message": "Encontrei mais de um compromisso nesse período. Pode me dizer o dia exato?"}
+    return events[0], None
+
+
 async def cancel_event_impl(
     deps: AgentDeps, *, client_name=None, client_phone=None,
     period: str = "this_week", reason: str | None = None,
@@ -209,26 +232,10 @@ async def cancel_event_impl(
     client, error = await _resolve_client(deps, client_name, client_phone)
     if error:
         return error
-    try:
-        start, end = calculate_date_range(period, deps.current_datetime)
-    except ValueError:
-        return {"success": False, "data": None,
-                "message": "Não entendi o período. Tente 'hoje' ou 'esta semana'."}
 
-    deps.event_service.ensure_occurrences(deps.user_id, start, end)
-    events = [
-        e for e in deps.event_service.list_events_in_range(deps.user_id, start, end)
-        if e.client_id == client.id
-    ]
-    if not events:
-        first = client.name.split()[0]
-        return {"success": False, "data": None,
-                "message": f"Não encontrei compromisso de {first} nesse período."}
-    if len(events) > 1:
-        return {"success": False, "data": {"count": len(events)},
-                "message": "Encontrei mais de um compromisso nesse período. Pode me dizer o dia exato?"}
-
-    event = events[0]
+    event, error = _find_single_event_for_client(deps, client, period)
+    if error:
+        return error
     billable = charge if charge is not None else False
     # Google is the source of truth: cancel there first (best-effort).
     try:
