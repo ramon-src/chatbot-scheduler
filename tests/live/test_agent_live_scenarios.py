@@ -204,15 +204,15 @@ async def test_deactivate_client(live):
 # BLOQUEADOS POR FEATURE (habilitar depois de construir a capacidade)
 # =============================================================================
 
-@pytest.mark.skip(reason=_feature("tool de reagendamento (update_event) ainda não exposta ao agente"))
 async def test_reschedule_event(live):
-    """'muda a sessão da Maria de amanhã para as 15h' → atualiza o horário do evento."""
+    """'muda a sessão da Maria de amanhã para as 15h' → reschedule_event + resposta "Remarquei"."""
     from app.models.event import Event
 
     await live.send(f"agenda a {live.client_name} amanhã às 10h")
     result = await live.send(f"muda a sessão da {live.client_name} de amanhã para as 15h")
-    updates = live.tool_returns(result, "update_event")
+    updates = live.tool_returns(result, "reschedule_event")
     assert updates and updates[-1]["success"] is True, f"output: {result.output!r}"
+    assert "remarquei" in result.output.lower(), f"expected 'Remarquei' in output: {result.output!r}"
     ev = (
         live.db.query(Event)
         .filter(Event.user_id == live.user_id, Event.status != "cancelled")
@@ -222,9 +222,8 @@ async def test_reschedule_event(live):
     assert ev.start_time.astimezone(live.tz).hour == 15
 
 
-@pytest.mark.skip(reason=_feature("sem detecção de conflito de horário"))
 async def test_conflict_detection_warns(live):
-    """Agendar dois clientes no mesmo horário → o agente deve avisar/recusar o conflito."""
+    """Agendar dois clientes no mesmo horário → warn-not-block: evento criado + "Atenção" na resposta."""
     from app.models.client import Client
 
     other = Client(
@@ -237,8 +236,13 @@ async def test_conflict_detection_warns(live):
         await live.send(f"agenda a {live.client_name} amanhã às 10h")
         result = await live.send("agenda o João Pereira amanhã às 10h")
         creates = live.tool_returns(result, "create_event")
-        # comportamento-alvo: a segunda criação é barrada por conflito
-        assert creates and creates[-1]["success"] is False
+        # warn-not-block: o segundo evento deve ser criado (success=True) com aviso
+        assert creates and creates[-1]["success"] is True, (
+            f"expected conflict to WARN not block; output: {result.output!r}"
+        )
+        assert "atenção" in result.output.lower(), (
+            f"expected 'Atenção' warning in output: {result.output!r}"
+        )
     finally:
         live.db.delete(other)
         live.db.commit()
