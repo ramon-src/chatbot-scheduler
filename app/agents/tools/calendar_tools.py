@@ -50,9 +50,17 @@ def _day_bounds(start: datetime, end: datetime) -> tuple[datetime, datetime]:
     return lo, hi
 
 
-def _find_overlaps(deps: AgentDeps, start: datetime, end: datetime, *, exclude_event_id=None) -> list:
+def _find_overlaps(
+    deps: AgentDeps, start: datetime, end: datetime, *,
+    exclude_event_id=None, exclude_parent_id=None,
+) -> list:
     """Active events of the professional whose [start_time, end_time) overlaps [start, end).
-    list_events_in_range already excludes cancelled events and series templates."""
+    list_events_in_range already excludes cancelled events and series templates.
+
+    exclude_event_id: skip the event with this exact id (single-event self-exclusion).
+    exclude_parent_id: skip any event whose id or parent_event_id equals this value
+                       (series self-exclusion — omits template and all its siblings).
+    """
     if deps.event_service is None:
         return []
     lo, hi = _day_bounds(start, end)
@@ -61,6 +69,11 @@ def _find_overlaps(deps: AgentDeps, start: datetime, end: datetime, *, exclude_e
     for e in deps.event_service.list_events_in_range(deps.user_id, lo, hi):
         if exclude_event_id is not None and e.id == exclude_event_id:
             continue
+        if exclude_parent_id is not None:
+            if e.id == exclude_parent_id:
+                continue
+            if getattr(e, "parent_event_id", None) == exclude_parent_id:
+                continue
         if e.start_time < end and start < e.end_time:
             hits.append(e)
     return hits
@@ -272,19 +285,31 @@ async def reschedule_event_impl(
     new_start = _ensure_aware(new_start_time, deps.timezone)
     minutes = duration_minutes or deps.default_consult_minutes
     new_end = new_start + timedelta(minutes=minutes)
-    conflicts = _find_overlaps(deps, new_start, new_end, exclude_event_id=event.id)
 
     is_series = event.parent_event_id is not None or event.is_recurring
     if is_series:
         template = deps.event_service.get_event(event.parent_event_id) if event.parent_event_id else event
         if template is None or not template.google_event_id:
             return _dual_write_failed()
+        # Guard: series cadence is tied to a weekday (BYDAY in RRULE). Changing the
+        # weekday would diverge the template's stored start from the materialised
+        # occurrences and from Google. Refuse before any mutation.
+        if new_start.weekday() != event.start_time.weekday():
+            return {
+                "success": False, "data": None,
+                "message": (
+                    "Por enquanto só consigo mudar o horário de uma sessão recorrente, "
+                    "não o dia da semana. Quer manter o mesmo dia e só trocar a hora?"
+                ),
+            }
+        conflicts = _find_overlaps(deps, new_start, new_end, exclude_parent_id=template.id)
         try:
             deps.calendar_service.update_event(template.google_event_id, start=new_start, end=new_end)
         except Exception:
             return _dual_write_failed()
         deps.event_service.reschedule_series(template, new_start, new_end, from_dt=deps.current_datetime)
     else:
+        conflicts = _find_overlaps(deps, new_start, new_end, exclude_event_id=event.id)
         if not event.google_event_id:
             return _dual_write_failed()
         try:

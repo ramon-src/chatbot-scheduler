@@ -79,3 +79,48 @@ async def test_create_event_warns_on_conflict_but_still_succeeds():
     assert out["data"].get("conflict") is True
     assert "Atenção" in out["message"]
     assert "Maria" in out["message"]
+
+
+# ---- Finding 2: exclude_parent_id skips sibling occurrences ----
+
+def test_find_overlaps_exclude_parent_id_skips_siblings():
+    """Sibling occurrences (same parent_event_id) must not be flagged as conflicts."""
+    base = datetime(2026, 6, 23, 10, 0, tzinfo=ZoneInfo(TZ))
+    parent_id = uuid4()
+    # A sibling occurrence sharing the same parent_event_id
+    sibling = SimpleNamespace(
+        id=uuid4(), parent_event_id=parent_id,
+        start_time=base, end_time=base + timedelta(minutes=60),
+        client=SimpleNamespace(name="Maria Silva"), client_id=uuid4(),
+    )
+    deps = _deps([sibling])
+    hits = _find_overlaps(deps, base, base + timedelta(minutes=60), exclude_parent_id=parent_id)
+    assert hits == [], "sibling occurrences must be excluded when exclude_parent_id is set"
+
+
+def test_find_overlaps_exclude_parent_id_skips_template_itself():
+    """An event whose id == exclude_parent_id must also be excluded (template itself)."""
+    base = datetime(2026, 6, 23, 10, 0, tzinfo=ZoneInfo(TZ))
+    parent_id = uuid4()
+    template = SimpleNamespace(
+        id=parent_id, parent_event_id=None,
+        start_time=base, end_time=base + timedelta(minutes=60),
+        client=SimpleNamespace(name="Maria Silva"), client_id=uuid4(),
+    )
+    deps = _deps([template])
+    hits = _find_overlaps(deps, base, base + timedelta(minutes=60), exclude_parent_id=parent_id)
+    assert hits == [], "template event itself must be excluded when its id == exclude_parent_id"
+
+
+def test_find_overlaps_exclude_parent_id_keeps_unrelated_conflict():
+    """An unrelated event must still be flagged even when exclude_parent_id is set."""
+    base = datetime(2026, 6, 23, 10, 0, tzinfo=ZoneInfo(TZ))
+    parent_id = uuid4()
+    unrelated = SimpleNamespace(
+        id=uuid4(), parent_event_id=uuid4(),  # different parent
+        start_time=base, end_time=base + timedelta(minutes=60),
+        client=SimpleNamespace(name="João Souza"), client_id=uuid4(),
+    )
+    deps = _deps([unrelated])
+    hits = _find_overlaps(deps, base, base + timedelta(minutes=60), exclude_parent_id=parent_id)
+    assert len(hits) == 1, "unrelated events must still appear as conflicts"
