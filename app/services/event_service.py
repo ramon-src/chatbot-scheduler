@@ -122,6 +122,24 @@ class EventService:
             )
         ).order_by(Event.start_time).first()
 
+    def reschedule_series(self, template: Event, new_start: datetime, new_end: datetime, *, from_dt: datetime) -> Event:
+        """Move a recurring series to a new time-of-day: update the template's
+        start/end (the materialization dtstart) and drop future still-scheduled
+        occurrences so they re-materialize from the new template. Weekday cadence
+        (the RRULE BYDAY) is preserved."""
+        template.start_time = new_start
+        template.end_time = new_end
+        self.db.query(Event).filter(
+            and_(
+                Event.parent_event_id == template.id,
+                Event.status == EventStatus.SCHEDULED.value,
+                Event.start_time >= from_dt,
+            )
+        ).delete(synchronize_session=False)
+        self.db.commit()
+        self.db.refresh(template)
+        return template
+
     def set_billable(self, event: Event, value: bool) -> Event:
         event.billable = value
         self.db.commit()

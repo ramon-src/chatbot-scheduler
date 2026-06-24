@@ -256,6 +256,53 @@ async def cancel_event_impl(
             "message": f"Cancelei o compromisso de {first}."}
 
 
+async def reschedule_event_impl(
+    deps: AgentDeps, *, client_name=None, client_phone=None,
+    period: str = "this_week", new_start_time: datetime, duration_minutes: int | None = None,
+) -> dict:
+    if deps.calendar_service is None or deps.event_service is None:
+        return _not_connected()
+    client, error = await _resolve_client(deps, client_name, client_phone)
+    if error:
+        return error
+    event, error = _find_single_event_for_client(deps, client, period)
+    if error:
+        return error
+
+    new_start = _ensure_aware(new_start_time, deps.timezone)
+    minutes = duration_minutes or deps.default_consult_minutes
+    new_end = new_start + timedelta(minutes=minutes)
+    conflicts = _find_overlaps(deps, new_start, new_end, exclude_event_id=event.id)
+
+    is_series = event.parent_event_id is not None or event.is_recurring
+    if is_series:
+        template = deps.event_service.get_event(event.parent_event_id) if event.parent_event_id else event
+        if template is None or not template.google_event_id:
+            return _dual_write_failed()
+        try:
+            deps.calendar_service.update_event(template.google_event_id, start=new_start, end=new_end)
+        except Exception:
+            return _dual_write_failed()
+        deps.event_service.reschedule_series(template, new_start, new_end, from_dt=deps.current_datetime)
+    else:
+        if not event.google_event_id:
+            return _dual_write_failed()
+        try:
+            deps.calendar_service.update_event(event.google_event_id, start=new_start, end=new_end)
+        except Exception:
+            return _dual_write_failed()
+        deps.event_service.update_event(event, start=new_start, end=new_end)
+
+    first = client.name.split()[0]
+    warning, who = _conflict_warning(deps, conflicts)
+    data = {"client": client.name, "start": new_start.isoformat()}
+    if who:
+        data["conflict"] = True
+        data["conflict_with"] = who
+    return {"success": True, "data": data,
+            "message": f"Remarquei {first} para {_fmt(new_start, deps.timezone)}." + warning}
+
+
 async def set_session_charge_impl(
     deps: AgentDeps, *, client_name=None, client_phone=None, session_date: str, charge: bool,
 ) -> dict:
@@ -331,6 +378,20 @@ def register_calendar_tools(agent) -> None:
         return await cancel_event_impl(
             ctx.deps, client_name=client_name, client_phone=client_phone,
             period=period, reason=reason, charge=charge,
+        )
+
+    @agent.tool
+    async def reschedule_event(
+        ctx: RunContext[AgentDeps], new_start_time: str,
+        client_name: str | None = None, client_phone: str | None = None,
+        period: str = "this_week", duration_minutes: int | None = None,
+    ) -> dict:
+        """Remarca o compromisso de um cliente para um novo horário. new_start_time em ISO 8601.
+        Exige cliente cadastrado e um compromisso existente no período."""
+        return await reschedule_event_impl(
+            ctx.deps, client_name=client_name, client_phone=client_phone,
+            period=period, new_start_time=datetime.fromisoformat(new_start_time),
+            duration_minutes=duration_minutes,
         )
 
     @agent.tool
