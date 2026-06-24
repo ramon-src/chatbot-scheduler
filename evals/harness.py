@@ -109,6 +109,8 @@ def _purge(db) -> None:
         (ChatSession.user_id == EVAL_USER_ID) | (ChatSession.phone_number == EVAL_PHONE)
     ).delete(synchronize_session=False)
     db.query(Event).filter(Event.user_id == EVAL_USER_ID).delete(synchronize_session=False)
+    from app.models.calendar import Calendar
+    db.query(Calendar).filter(Calendar.user_id == EVAL_USER_ID).delete(synchronize_session=False)
     db.query(Client).filter(Client.user_id == EVAL_USER_ID).delete(synchronize_session=False)
     db.query(Lead).filter(Lead.phone == EVAL_PHONE).delete(synchronize_session=False)
     db.query(User).filter(User.phone == EVAL_PHONE).delete(synchronize_session=False)
@@ -138,6 +140,29 @@ def _apply_setup(db, inputs: CaseInputs) -> None:
         ))
     db.commit()
 
+    from datetime import datetime, timedelta
+
+    from app.services.event_service import EventService
+    es = EventService(db)
+    es.get_primary_calendar(EVAL_USER_ID)  # ensure a calendar row exists
+    seed_events = (inputs.setup or {}).get("events", [])
+    if seed_events:
+        from app.models.client import Client as _Client
+        by_name = {c.name: c for c in db.query(_Client).filter(_Client.user_id == EVAL_USER_ID)}
+        for i, ev in enumerate(seed_events):
+            client = by_name.get(ev["client"])
+            if client is None:
+                continue
+            start = datetime.fromisoformat(ev["start"])
+            end = start + timedelta(minutes=ev.get("duration", 60))
+            es.record_event(
+                user_id=EVAL_USER_ID, client_id=client.id, title=f"Sessão - {client.name}",
+                start=start, end=end, google_event_id=f"seed-{i}",
+                is_recurring=bool(ev.get("recurring", False)),
+                recurrence_rule=ev.get("recurrence_rule"),
+                price=client.consult_price,
+            )
+
 
 def _snapshot(db, inputs: CaseInputs) -> DbSnapshot:
     from app.models.client import Client
@@ -150,7 +175,9 @@ def _snapshot(db, inputs: CaseInputs) -> DbSnapshot:
     ]
     events = [
         {"status": e.status, "billable": e.billable, "is_recurring": e.is_recurring,
-         "recurrence_rule": e.recurrence_rule}
+         "recurrence_rule": e.recurrence_rule,
+         "client": (e.client.name if e.client else None),
+         "start_time": e.start_time.isoformat()}
         for e in db.query(Event).filter(Event.user_id == EVAL_USER_ID)
     ]
     lead_row = db.query(Lead).filter(Lead.phone == EVAL_PHONE).first()
@@ -199,6 +226,8 @@ async def run_case(inputs: CaseInputs, model, *, db_factory=SessionLocal) -> Cas
             agent = build_simplifica_agent()
             user = _ensure_eval_user(db)
             _apply_setup(db, inputs)
+            from evals.fakes import FakeCalendarService
+            fake_calendar = FakeCalendarService()
 
         t0 = time.monotonic()
         with agent.override(model=model):
@@ -209,6 +238,7 @@ async def run_case(inputs: CaseInputs, model, *, db_factory=SessionLocal) -> Cas
                 else:
                     session = history.get_or_create_session(EVAL_USER_ID, EVAL_PHONE)
                     deps = build_agent_deps(db, user, history_summary=session.summary)
+                    deps.calendar_service = fake_calendar
                 message_history = to_model_messages(history.recent_messages(session, RAW_HISTORY_LIMIT))
                 result = await agent.run(msg, deps=deps, message_history=message_history)
                 final_output = result.output
