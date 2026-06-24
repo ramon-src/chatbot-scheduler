@@ -41,6 +41,40 @@ def _fmt(dt: datetime, tz: str) -> str:
     return local.strftime("%d/%m às %Hh%M").replace("h00", "h")
 
 
+def _day_bounds(start: datetime, end: datetime) -> tuple[datetime, datetime]:
+    """Full-day window spanning [start, end), so list_events_in_range (which filters
+    by start_time) catches same-day events regardless of time."""
+    from datetime import time
+    lo = datetime.combine(start.date(), time.min, tzinfo=start.tzinfo)
+    hi = datetime.combine(end.date(), time.max, tzinfo=end.tzinfo)
+    return lo, hi
+
+
+def _find_overlaps(deps: AgentDeps, start: datetime, end: datetime, *, exclude_event_id=None) -> list:
+    """Active events of the professional whose [start_time, end_time) overlaps [start, end).
+    list_events_in_range already excludes cancelled events and series templates."""
+    if deps.event_service is None:
+        return []
+    lo, hi = _day_bounds(start, end)
+    deps.event_service.ensure_occurrences(deps.user_id, lo, hi)
+    hits = []
+    for e in deps.event_service.list_events_in_range(deps.user_id, lo, hi):
+        if exclude_event_id is not None and e.id == exclude_event_id:
+            continue
+        if e.start_time < end and start < e.end_time:
+            hits.append(e)
+    return hits
+
+
+def _conflict_warning(deps: AgentDeps, conflicts: list) -> tuple[str, str | None]:
+    """Plain-text warning suffix + the conflicting client's first name (or None)."""
+    if not conflicts:
+        return "", None
+    other = conflicts[0]
+    name = other.client.name.split()[0] if getattr(other, "client", None) else "outro cliente"
+    return f" Atenção: você já tem {name} nesse horário.", name
+
+
 async def _resolve_client(deps: AgentDeps, client_name, client_phone):
     """Return (client, error_dict). Exactly one of client/error is non-None."""
     if client_phone:
@@ -80,6 +114,8 @@ async def create_event_impl(
     end = start_time + timedelta(minutes=minutes)
     summary = title or f"Sessão - {client.name}"
 
+    conflicts = _find_overlaps(deps, start_time, end)
+
     created = deps.calendar_service.create_event(summary=summary, start=start_time, end=end)
     try:
         deps.event_service.record_event(
@@ -93,8 +129,13 @@ async def create_event_impl(
         _compensate_google(deps, created["id"])
         return _dual_write_failed()
     first = client.name.split()[0]
-    return {"success": True, "data": {"client": client.name, "start": start_time.isoformat()},
-            "message": f"Agendei {first} para {_fmt(start_time, deps.timezone)}."}
+    warning, who = _conflict_warning(deps, conflicts)
+    data = {"client": client.name, "start": start_time.isoformat()}
+    if who:
+        data["conflict"] = True
+        data["conflict_with"] = who
+    return {"success": True, "data": data,
+            "message": f"Agendei {first} para {_fmt(start_time, deps.timezone)}." + warning}
 
 
 async def create_recurring_event_impl(
@@ -114,6 +155,8 @@ async def create_recurring_event_impl(
     summary = title or f"Sessão - {client.name}"
     rrule = deps.calendar_service.build_weekly_rrule(weekdays, until)
 
+    conflicts = _find_overlaps(deps, start_time, end)
+
     created = deps.calendar_service.create_event(
         summary=summary, start=start_time, end=end, recurrence=[rrule]
     )
@@ -127,8 +170,13 @@ async def create_recurring_event_impl(
         _compensate_google(deps, created["id"])
         return _dual_write_failed()
     first = client.name.split()[0]
-    return {"success": True, "data": {"client": client.name},
-            "message": f"Agendei sessões recorrentes para {first}, começando {_fmt(start_time, deps.timezone)}."}
+    warning, who = _conflict_warning(deps, conflicts)
+    data = {"client": client.name}
+    if who:
+        data["conflict"] = True
+        data["conflict_with"] = who
+    return {"success": True, "data": data,
+            "message": f"Agendei sessões recorrentes para {first}, começando {_fmt(start_time, deps.timezone)}." + warning}
 
 
 async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
