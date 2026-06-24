@@ -97,6 +97,20 @@ async def test_unknown_client_is_rejected(live):
     assert after == before, "an orphan event was created for an unknown client"
 
 
+async def test_remembers_client_across_turns(live):
+    """Multi-turn memory: turn 2 says 'dela' — the agent must resolve it to the
+    client named in turn 1 via replayed history (no clarifying question)."""
+    await live.send_memory(f"tenho uma cliente chamada {live.client_name}, tudo bem?")
+    result = await live.send_memory("me lembra o telefone dela?")
+
+    # If memory worked, the agent looked up Maria (resolving 'dela') and returned her phone.
+    finds = live.tool_returns(result, "find_client")
+    assert finds, f"agent did not resolve 'dela' from history. Output: {result.output!r}"
+    assert any(
+        (f.get("data") or {}).get("phone") == live.client_phone for f in finds if f.get("success")
+    ), f"find_client did not resolve to {live.client_name}: {finds}"
+
+
 async def test_cancel_removes_event(live):
     from app.models.event import Event
 

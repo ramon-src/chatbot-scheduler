@@ -38,6 +38,12 @@ def test_agent_message_returns_content(monkeypatch):
     monkeypatch.setattr(agent_routes, "ClientService", lambda db: MagicMock())
     # Keep the endpoint test network-free: don't resolve real Google calendar access.
     monkeypatch.setattr(agent_routes, "build_calendar_access", lambda db, user, settings: None)
+    # Stub conversation memory (DB is mocked): empty history, no-op persistence.
+    fake_history = MagicMock()
+    fake_history.get_or_create_session.return_value = MagicMock(summary=None, summarized_count=0)
+    fake_history.recent_messages.return_value = []
+    fake_history.unsummarized_overflow.return_value = []
+    monkeypatch.setattr(agent_routes, "ChatHistoryService", lambda db: fake_history)
 
     # Override get_db to avoid needing a real DB connection, and override the
     # model with the scripted FunctionModel at the agent level.

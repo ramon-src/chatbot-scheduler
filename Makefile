@@ -14,6 +14,7 @@ DOCKER := docker
 API_PORT := 8010
 API_PREFIX := /api/v1
 DEV_USER_ID := 550e8400-e29b-41d4-a716-446655440000
+PHONE ?= dev-cli
 
 # =============================================================================
 # HELP
@@ -117,7 +118,7 @@ bootstrap: ## Setup completo p/ dev local: infra + migrate + seed
 chat: ## Enviar uma mensagem ao agente (usage: make chat MSG="cadastra a Maria Silva, ...")
 	@curl -s -X POST http://localhost:$(API_PORT)$(API_PREFIX)/agent/message \
 		-H "Content-Type: application/json" \
-		-d '{"user_id": "$(DEV_USER_ID)", "message": "$(MSG)"}' | python3 -m json.tool
+		-d '{"user_id": "$(DEV_USER_ID)", "message": "$(MSG)", "phone_number": "$(PHONE)"}' | python3 -m json.tool
 
 psql: ## Shell psql na infra
 	@$(DOCKER_COMPOSE) exec postgres psql -U simplificapsi -d simplificapsi_dev
