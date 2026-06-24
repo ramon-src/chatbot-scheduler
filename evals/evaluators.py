@@ -80,6 +80,13 @@ class DbState(Evaluator):
             want = c["event_cancelled_billable"]
             if not any(e["status"] == "cancelled" and e["billable"] == want for e in db.events):
                 return False
+        if "event_for_client" in c:
+            name = c["event_for_client"]
+            if not any(
+                (ev.get("client") or "") and name in ev["client"] and ev.get("status") != "cancelled"
+                for ev in db.events
+            ):
+                return False
         return True
 
 

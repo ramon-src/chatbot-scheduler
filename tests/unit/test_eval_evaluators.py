@@ -31,3 +31,14 @@ def test_no_leakage_flags_url_and_markdown():
     assert NoLeakage().evaluate(_ctx(_result([], "tudo certo, sem nada"))) is True
     assert NoLeakage().evaluate(_ctx(_result([], "veja em http://x.com"))) is False
     assert NoLeakage().evaluate(_ctx(_result([], "isso é **negrito**"))) is False
+
+
+def test_dbstate_event_for_client_matches_active_event():
+    from evals.evaluators import DbState
+
+    snap = DbSnapshot(events=[{"status": "scheduled", "client": "Maria Silva", "start_time": "x"}])
+    result = CaseResult(tool_calls=[], final_output="", transcript=[], db=snap,
+                        tokens=0, latency_ms=0, model="m")
+    ctx = _ctx(result)
+    assert DbState(check={"event_for_client": "Maria"}).evaluate(ctx) is True
+    assert DbState(check={"event_for_client": "Joana"}).evaluate(ctx) is False

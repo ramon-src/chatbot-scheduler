@@ -33,6 +33,14 @@ def main(model_alias: str = "gpt-5.4-mini", case_filter: str | None = None, suit
 
         async def task(inputs):
             return await run_summary_case(inputs, model)
+    elif suite == "agenda":
+        from evals.datasets.agenda import build_agenda_dataset
+        from evals.harness import run_case
+
+        dataset = build_agenda_dataset()
+
+        async def task(inputs):
+            return await run_case(inputs, model)
     else:
         from evals.harness import run_case
 
@@ -64,6 +72,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="gpt-5.4-mini")
     p.add_argument("--case", default=None)
-    p.add_argument("--suite", default="agent", choices=["agent", "summary"])
+    p.add_argument("--suite", default="agent", choices=["agent", "summary", "agenda"])
     args = p.parse_args()
     sys.exit(main(args.model, args.case, args.suite))
