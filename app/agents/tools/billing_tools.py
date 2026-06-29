@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from app.agents.deps import AgentDeps
 from app.agents.tools.calendar_tools import _resolve_client
+from app.channels.outbound import OutboundMessage
 from app.models.event import PaymentStatus
 from app.utils.date_range import calculate_date_range
 
@@ -113,6 +114,51 @@ async def list_pending_payments_impl(deps: AgentDeps, *, client_name=None,
             "message": f"Pagamentos em aberto — {parts}. Total {_brl(_total(pending))}."}
 
 
+async def send_payment_reminder_impl(deps: AgentDeps, *, client_name=None,
+                                     client_phone=None, period=None) -> dict:
+    if deps.event_service is None:
+        return _unavailable()
+    client, error = await _resolve_client(deps, client_name, client_phone)
+    if error:
+        return error
+    first = client.name.split()[0]
+    if not getattr(client, "phone", None):
+        return {"success": False, "data": None,
+                "message": f"Não tenho o telefone de {first} para enviar o lembrete."}
+    if deps.outbound is None:
+        return {"success": False, "data": None,
+                "message": "O envio de mensagens não está disponível agora. Tente mais tarde."}
+
+    start = end = None
+    if period:
+        try:
+            start, end = calculate_date_range(period, deps.current_datetime)
+        except ValueError:
+            return {"success": False, "data": None,
+                    "message": "Não entendi o período. Tente 'este mês'."}
+    pending = deps.event_service.list_pending_payments(
+        deps.user_id, client_id=client.id, start=start, end=end, now=deps.current_datetime)
+    if not pending:
+        return {"success": True, "data": {"client": client.name, "count": 0},
+                "message": f"{first} não tem pagamentos em aberto."}
+
+    total = _total(pending)
+    mode = getattr(client, "billing_mode", "monthly")
+    if mode == "per_session" and len(pending) == 1:
+        when = pending[0].start_time.astimezone(__import__("zoneinfo").ZoneInfo(deps.timezone)).strftime("%d/%m")
+        text = (f"Olá {first}! Passando pra lembrar do pagamento da sua consulta de {when}, "
+                f"no valor de {_brl(total)}. Qualquer coisa, estou à disposição.")
+    else:
+        text = (f"Olá {first}! Passando pra lembrar do pagamento de {len(pending)} consulta(s), "
+                f"no total de {_brl(total)}. Qualquer coisa, estou à disposição.")
+    ok = deps.outbound.send(OutboundMessage(to_phone=client.phone, text=text))
+    if not ok:
+        return {"success": False, "data": None,
+                "message": f"Não consegui enviar o lembrete para {first} agora. Tente de novo."}
+    return {"success": True, "data": {"client": client.name, "count": len(pending)},
+            "message": f"Enviei o lembrete de pagamento para {first}."}
+
+
 def register_billing_tools(agent) -> None:
     from pydantic_ai import RunContext
 
@@ -134,4 +180,13 @@ def register_billing_tools(agent) -> None:
     ) -> dict:
         """Lista pagamentos em aberto (de um cliente ou de todos), com totais."""
         return await list_pending_payments_impl(ctx.deps, client_name=client_name,
+                                                client_phone=client_phone, period=period)
+
+    @agent.tool
+    async def send_payment_reminder(
+        ctx: RunContext[AgentDeps], client_name: str | None = None,
+        client_phone: str | None = None, period: str | None = None,
+    ) -> dict:
+        """Envia um lembrete de pagamento ao WhatsApp do próprio cliente, com o total em aberto."""
+        return await send_payment_reminder_impl(ctx.deps, client_name=client_name,
                                                 client_phone=client_phone, period=period)

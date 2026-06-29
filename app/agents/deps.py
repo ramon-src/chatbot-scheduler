@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.services.client_service import ClientService
 
 if TYPE_CHECKING:
+    from app.channels.outbound import OutboundAdapter
     from app.services.event_service import EventService
     from app.services.google_calendar_service import GoogleCalendarService
     from app.services.lead_service import LeadService
@@ -28,6 +29,7 @@ class AgentDeps:
     client_service: ClientService
     calendar_service: GoogleCalendarService | None = field(default=None)
     event_service: EventService | None = field(default=None)
+    outbound: "OutboundAdapter | None" = field(default=None)
     default_consult_minutes: int = 60
 
 
