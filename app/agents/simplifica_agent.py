@@ -4,6 +4,7 @@ from pydantic_ai import Agent, RunContext
 
 from app.agents.deps import AgentDeps
 from app.agents.foundation import get_llm_model
+from app.agents.tools.billing_tools import register_billing_tools
 from app.agents.tools.calendar_tools import register_calendar_tools
 from app.agents.tools.client_tools import register_client_tools
 from app.agents.tools.help_tools import register_help_tools
@@ -86,5 +87,6 @@ def build_simplifica_agent() -> Agent[AgentDeps, str]:
 
     register_client_tools(agent)
     register_calendar_tools(agent)
+    register_billing_tools(agent)
     register_help_tools(agent)
     return agent
