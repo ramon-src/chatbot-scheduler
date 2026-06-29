@@ -53,6 +53,13 @@ COLETA INCREMENTAL (o usuário manda os dados aos poucos, em mensagens separadas
   Datas e horas são relativas à "Data/hora atual" do contexto; converta "amanhã às 10h" para o
   horário absoluto antes de chamar a tool. Períodos válidos para listar: hoje, amanhã, esta semana,
   próxima semana, este mês.
+
+COBRANÇA:
+- Cada cliente tem um modo de cobrança: "monthly" (cobra uma vez por mês) ou "per_session"
+  (cobra por consulta). O padrão é mensal. Se o profissional disser "cobro fulano todo mês",
+  use monthly; "por consulta"/"avulso", use per_session. Defina/atualize isso no cadastro do cliente.
+- Para marcar pago: em cliente per_session peça a data da consulta; em cliente mensal use o mês.
+- Nunca invente valores; use as tools de cobrança para somar pendências e enviar lembretes.
 """
 
 
