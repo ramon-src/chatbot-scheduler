@@ -87,3 +87,39 @@ async def test_list_pending_empty():
     out = await list_pending_payments_impl(deps, client_phone=client.phone)
     assert out["success"] is True
     assert "pendente" in out["message"].lower() or "nenhum" in out["message"].lower()
+
+
+# --- month parsing tests ---
+
+@pytest.mark.asyncio
+async def test_mark_paid_monthly_with_year_month_string():
+    """LLM passes month='2026-06' (YYYY-MM, no day) — must not raise, must succeed."""
+    client = _client(mode="monthly")
+    pend = [SimpleNamespace(id=uuid4(), price=Decimal("200"))]
+    deps = _deps(client, pending=pend)
+    out = await mark_paid_impl(deps, client_phone=client.phone, month="2026-06")
+    assert out["success"] is True
+    assert deps.event_service.set_payment_status.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mark_paid_monthly_with_full_iso_date():
+    """month='2026-06-01' (full ISO) must still work."""
+    client = _client(mode="monthly")
+    pend = [SimpleNamespace(id=uuid4(), price=Decimal("200"))]
+    deps = _deps(client, pending=pend)
+    out = await mark_paid_impl(deps, client_phone=client.phone, month="2026-06-01")
+    assert out["success"] is True
+    assert deps.event_service.set_payment_status.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mark_paid_monthly_with_invalid_month_returns_friendly_error():
+    """Clearly invalid month string returns success=False with friendly PT-BR message."""
+    client = _client(mode="monthly")
+    deps = _deps(client, pending=[])
+    out = await mark_paid_impl(deps, client_phone=client.phone, month="junho")
+    assert out["success"] is False
+    assert out["data"] is None
+    # message must be friendly PT-BR, no IDs
+    assert "mês" in out["message"].lower() or "junho" in out["message"].lower()

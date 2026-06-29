@@ -59,7 +59,17 @@ async def mark_paid_impl(deps: AgentDeps, *, client_name=None, client_phone=None
                 "message": f"Marquei a consulta de {first} como paga."}
 
     # monthly
-    ref = deps.current_datetime if month is None else datetime.fromisoformat(month)
+    if month is None:
+        ref = deps.current_datetime
+    else:
+        raw = month.strip()
+        if len(raw) == 7:  # YYYY-MM — append day so fromisoformat accepts it
+            raw = raw + "-01"
+        try:
+            ref = datetime.fromisoformat(raw)
+        except ValueError:
+            return {"success": False, "data": None,
+                    "message": "Não entendi o mês. Tente algo como 'junho' ou 2026-06."}
     start, end = _month_window(ref)
     pending = deps.event_service.list_pending_payments(
         deps.user_id, client_id=client.id, start=start, end=end, now=deps.current_datetime)
