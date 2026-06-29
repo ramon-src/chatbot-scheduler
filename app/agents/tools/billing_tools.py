@@ -3,6 +3,7 @@
 from datetime import date as _date
 from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from app.agents.deps import AgentDeps
 from app.agents.tools.calendar_tools import _resolve_client
@@ -70,6 +71,8 @@ async def mark_paid_impl(deps: AgentDeps, *, client_name=None, client_phone=None
         except ValueError:
             return {"success": False, "data": None,
                     "message": "Não entendi o mês. Tente algo como 'junho' ou 2026-06."}
+        if ref.tzinfo is None:
+            ref = ref.replace(tzinfo=ZoneInfo(deps.timezone))
     start, end = _month_window(ref)
     pending = deps.event_service.list_pending_payments(
         deps.user_id, client_id=client.id, start=start, end=end, now=deps.current_datetime)

@@ -123,3 +123,19 @@ async def test_mark_paid_monthly_with_invalid_month_returns_friendly_error():
     assert out["data"] is None
     # message must be friendly PT-BR, no IDs
     assert "mês" in out["message"].lower() or "junho" in out["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_mark_paid_monthly_explicit_month_passes_tz_aware_window():
+    """When month='2026-06' is passed explicitly, start/end sent to list_pending_payments
+    must be timezone-aware (tzinfo is not None). A naive bound would cause a ±3h skew
+    at month boundaries when compared against timestamptz in Postgres (UTC session)."""
+    client = _client(mode="monthly")
+    pend = [SimpleNamespace(id=uuid4(), price=Decimal("200"))]
+    deps = _deps(client, pending=pend)
+    await mark_paid_impl(deps, client_phone=client.phone, month="2026-06")
+    call_kwargs = deps.event_service.list_pending_payments.call_args.kwargs
+    start = call_kwargs["start"]
+    end = call_kwargs["end"]
+    assert start.tzinfo is not None, f"start is naive: {start!r}"
+    assert end.tzinfo is not None, f"end is naive: {end!r}"
