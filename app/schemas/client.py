@@ -12,6 +12,14 @@ from pydantic import BaseModel, EmailStr, Field, validator
 
 from app.models.client import Client as ClientModel
 
+_VALID_BILLING_MODES = {"per_session", "monthly"}
+
+
+def _check_billing_mode(value):
+    if value is not None and value not in _VALID_BILLING_MODES:
+        raise ValueError("billing_mode deve ser 'per_session' ou 'monthly'")
+    return value
+
 
 class ClientBase(BaseModel):
     """Schema base para Client com validações comuns"""
@@ -112,6 +120,11 @@ class ClientCreate(ClientBase):
     )
     invoice_day: int = Field(..., ge=1, le=31, description="Dia do mês para faturamento")
     consult_price: Decimal = Field(..., ge=0, description="Preço da consulta em reais")
+    billing_mode: str = Field(default="monthly", description="Modo de cobrança: per_session ou monthly")
+
+    @validator("billing_mode")
+    def _validate_billing_mode(cls, v):
+        return _check_billing_mode(v)
 
 
 class ClientUpdate(BaseModel):
@@ -157,6 +170,11 @@ class ClientUpdate(BaseModel):
         None,
         description="Status ativo/inativo do cliente"
     )
+    billing_mode: Optional[str] = Field(default=None, description="Modo de cobrança: per_session ou monthly")
+
+    @validator("billing_mode")
+    def _validate_billing_mode(cls, v):
+        return _check_billing_mode(v)
 
     @validator('phone')
     def validate_phone(cls, v):
@@ -237,6 +255,7 @@ class ClientResponse(ClientBase):
         None,
         description="Preço da consulta em reais"
     )
+    billing_mode: Optional[str] = Field(default="monthly", description="Modo de cobrança: per_session ou monthly")
     created_at: datetime = Field(
         ...,
         description="Data de criação do cliente"
@@ -265,6 +284,7 @@ class ClientResponse(ClientBase):
             birth_date=client.birth_date,
             invoice_day=client.invoice_day,
             consult_price=client.consult_price,
+            billing_mode=getattr(client, "billing_mode", "monthly"),
             notes=client.notes,
             is_active=client.is_active,
             created_at=client.created_at,

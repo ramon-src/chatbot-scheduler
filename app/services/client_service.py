@@ -83,6 +83,7 @@ class ClientService:
                 is_active=client_data.is_active,
                 invoice_day=client_data.invoice_day,
                 consult_price=client_data.consult_price,
+                billing_mode=client_data.billing_mode,
             )
             
             self.db.add(client)
