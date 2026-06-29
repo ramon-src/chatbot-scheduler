@@ -121,6 +121,9 @@ eval-summary: ## Rodar o eval de faxina do resumo (LLM real; usage: make eval-su
 eval-agenda: ## Rodar o eval de agenda (LLM real + calendário fake; usage: make eval-agenda [MODEL=gpt-5.4-mini] [CASE=<substr>])
 	@RUN_EVAL=1 $(UV) run python -m evals.run --suite agenda --model $(or $(MODEL),gpt-5.4-mini) $(if $(CASE),--case $(CASE),)
 
+eval-billing: ## Rodar o eval de cobrança (LLM real + outbound fake; usage: make eval-billing [MODEL=gpt-5.4-mini] [CASE=<substr>])
+	@RUN_EVAL=1 $(UV) run python -m evals.run --suite billing --model $(or $(MODEL),gpt-5.4-mini) $(if $(CASE),--case $(CASE),)
+
 evolution: ## Subir o Evolution API (+ postgres dedicado) no Docker
 	@echo "📲 Subindo Evolution API..."
 	@$(DOCKER_COMPOSE) up -d evolution_postgres evolution

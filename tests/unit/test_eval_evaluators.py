@@ -42,3 +42,15 @@ def test_dbstate_event_for_client_matches_active_event():
     ctx = _ctx(result)
     assert DbState(check={"event_for_client": "Maria"}).evaluate(ctx) is True
     assert DbState(check={"event_for_client": "Joana"}).evaluate(ctx) is False
+
+
+def test_dbstate_session_paid_for_client():
+    from evals.evaluators import DbState
+    from evals.harness import CaseResult, DbSnapshot
+    snap = DbSnapshot(events=[{"status": "scheduled", "client": "Maria Silva",
+                               "payment_status": "paid", "start_time": "x"}])
+    result = CaseResult(tool_calls=[], final_output="", transcript=[], db=snap,
+                        tokens=0, latency_ms=0, model="m")
+    ctx = type("C", (), {"output": result})()
+    assert DbState(check={"session_paid_for_client": "Maria"}).evaluate(ctx) is True
+    assert DbState(check={"session_paid_for_client": "Joana"}).evaluate(ctx) is False

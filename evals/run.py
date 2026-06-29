@@ -41,6 +41,14 @@ def main(model_alias: str = "gpt-5.4-mini", case_filter: str | None = None, suit
 
         async def task(inputs):
             return await run_case(inputs, model)
+    elif suite == "billing":
+        from evals.datasets.billing import build_billing_dataset
+        from evals.harness import run_case
+
+        dataset = build_billing_dataset()
+
+        async def task(inputs):
+            return await run_case(inputs, model)
     else:
         from evals.harness import run_case
 
@@ -72,6 +80,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="gpt-5.4-mini")
     p.add_argument("--case", default=None)
-    p.add_argument("--suite", default="agent", choices=["agent", "summary", "agenda"])
+    p.add_argument("--suite", default="agent", choices=["agent", "summary", "agenda", "billing"])
     args = p.parse_args()
     sys.exit(main(args.model, args.case, args.suite))

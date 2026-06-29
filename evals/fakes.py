@@ -30,3 +30,15 @@ class FakeCalendarService:
     def build_weekly_rrule(weekdays, until) -> str:
         from app.services.google_calendar_service import GoogleCalendarService
         return GoogleCalendarService.build_weekly_rrule(weekdays, until)
+
+
+class FakeOutboundAdapter:
+    """Records outbound sends; never hits the network."""
+    provider = "fake"
+
+    def __init__(self) -> None:
+        self.sent = []
+
+    def send(self, message) -> bool:
+        self.sent.append(message)
+        return True

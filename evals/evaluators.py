@@ -87,6 +87,13 @@ class DbState(Evaluator):
                 for ev in db.events
             ):
                 return False
+        if "session_paid_for_client" in c:
+            name = c["session_paid_for_client"]
+            if not any(
+                (ev.get("client") or "") and name in ev["client"] and ev.get("payment_status") == "paid"
+                for ev in db.events
+            ):
+                return False
         return True
 
 

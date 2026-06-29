@@ -136,7 +136,8 @@ def _apply_setup(db, inputs: CaseInputs) -> None:
         db.add(Client(
             user_id=EVAL_USER_ID, name=c["name"], phone=c["phone"],
             invoice_day=c.get("invoice_day", 10),
-            consult_price=Decimal(str(c.get("consult_price", 200))), is_active=True,
+            consult_price=Decimal(str(c.get("consult_price", 200))),
+            billing_mode=c.get("billing_mode", "monthly"), is_active=True,
         ))
     db.commit()
 
@@ -155,13 +156,19 @@ def _apply_setup(db, inputs: CaseInputs) -> None:
                 continue
             start = datetime.fromisoformat(ev["start"])
             end = start + timedelta(minutes=ev.get("duration", 60))
-            es.record_event(
+            created_ev = es.record_event(
                 user_id=EVAL_USER_ID, client_id=client.id, title=f"Sessão - {client.name}",
                 start=start, end=end, google_event_id=f"seed-{i}",
                 is_recurring=bool(ev.get("recurring", False)),
                 recurrence_rule=ev.get("recurrence_rule"),
                 price=client.consult_price,
             )
+            if "payment_status" in ev:
+                created_ev.payment_status = ev["payment_status"]
+            if "billable" in ev:
+                created_ev.billable = ev["billable"]
+            if "payment_status" in ev or "billable" in ev:
+                db.commit()
 
 
 def _snapshot(db, inputs: CaseInputs) -> DbSnapshot:
@@ -177,7 +184,8 @@ def _snapshot(db, inputs: CaseInputs) -> DbSnapshot:
         {"status": e.status, "billable": e.billable, "is_recurring": e.is_recurring,
          "recurrence_rule": e.recurrence_rule,
          "client": (e.client.name if e.client else None),
-         "start_time": e.start_time.isoformat()}
+         "start_time": e.start_time.isoformat(),
+         "payment_status": e.payment_status}
         for e in db.query(Event).filter(Event.user_id == EVAL_USER_ID)
     ]
     lead_row = db.query(Lead).filter(Lead.phone == EVAL_PHONE).first()
@@ -226,8 +234,9 @@ async def run_case(inputs: CaseInputs, model, *, db_factory=SessionLocal) -> Cas
             agent = build_simplifica_agent()
             user = _ensure_eval_user(db)
             _apply_setup(db, inputs)
-            from evals.fakes import FakeCalendarService
+            from evals.fakes import FakeCalendarService, FakeOutboundAdapter
             fake_calendar = FakeCalendarService()
+            fake_outbound = FakeOutboundAdapter()
 
         t0 = time.monotonic()
         with agent.override(model=model):
@@ -239,6 +248,7 @@ async def run_case(inputs: CaseInputs, model, *, db_factory=SessionLocal) -> Cas
                     session = history.get_or_create_session(EVAL_USER_ID, EVAL_PHONE)
                     deps = build_agent_deps(db, user, history_summary=session.summary)
                     deps.calendar_service = fake_calendar
+                    deps.outbound = fake_outbound
                 message_history = to_model_messages(history.recent_messages(session, RAW_HISTORY_LIMIT))
                 result = await agent.run(msg, deps=deps, message_history=message_history)
                 final_output = result.output
