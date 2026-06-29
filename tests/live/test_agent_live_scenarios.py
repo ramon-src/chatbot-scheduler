@@ -263,26 +263,170 @@ async def test_conflict_detection_warns(live):
         live.db.commit()
 
 
-@pytest.mark.skip(reason=_feature("Plano 3 — cobrança (mark_paid) não implementado"))
 async def test_billing_mark_paid(live):
-    """'marca como paga a consulta da Maria' → mark_paid; pagamento registrado."""
-    await live.send(f"agenda a {live.client_name} amanhã às 10h")
-    result = await live.send(f"marca como paga a consulta da {live.client_name} de amanhã")
-    paid = live.tool_returns(result, "mark_paid")
-    assert paid and paid[-1]["success"] is True
+    """Seed a past pending session at 7h → 'marca como pago o mês da Maria' → mark_paid success.
+
+    Seeds the event directly in the DB (no Google Calendar needed for billing).
+    Uses hour 7 to avoid cross-test collisions with the other scenarios in this
+    module-scoped fixture (other tests use 8h, 9h, 10h, 14h, 15h, 17h).
+    Client billing_mode defaults to 'monthly' (server_default).
+    """
+    from datetime import datetime, timedelta
+
+    from app.models.calendar import Calendar
+    from app.models.client import Client
+    from app.models.event import Event, EventStatus, PaymentStatus
+
+    client = live.db.query(Client).filter(
+        Client.user_id == live.user_id, Client.name == live.client_name
+    ).first()
+    calendar = (
+        live.db.query(Calendar)
+        .filter(Calendar.user_id == live.user_id, Calendar.is_primary == True)  # noqa: E712
+        .first()
+    )
+    if calendar is None:
+        from app.services.event_service import EventService
+        calendar = EventService(live.db).get_primary_calendar(live.user_id)
+
+    yesterday_7h = (
+        datetime.now(live.tz).replace(hour=7, minute=0, second=0, microsecond=0)
+        - timedelta(days=1)
+    )
+    ev = Event(
+        user_id=live.user_id, client_id=client.id, calendar_id=calendar.id,
+        title=f"Sessão {live.client_name}", google_event_id=f"billing-test-mark-paid-7h",
+        start_time=yesterday_7h, end_time=yesterday_7h + timedelta(hours=1),
+        price=Decimal("200"), billable=True,
+        status=EventStatus.SCHEDULED.value,
+        payment_status=PaymentStatus.PENDING.value,
+    )
+    live.db.add(ev)
+    live.db.commit()
+
+    try:
+        result = await live.send(
+            f"marca como pago o mês da {live.client_name}, telefone {live.client_phone}"
+        )
+        paid = live.tool_returns(result, "mark_paid")
+        assert paid and paid[-1]["success"] is True, (
+            f"mark_paid not called or failed. output: {result.output!r} tool_returns: {paid!r}"
+        )
+        live.db.refresh(ev)
+        assert ev.payment_status == PaymentStatus.PAID.value, (
+            f"event payment_status not updated: {ev.payment_status!r}"
+        )
+    finally:
+        live.db.delete(ev)
+        live.db.commit()
 
 
-@pytest.mark.skip(reason=_feature("Plano 3 — cobrança (list_pending_payments) não implementado"))
 async def test_billing_list_pending(live):
-    """'quem está devendo este mês?' → list_pending_payments."""
-    result = await live.send("quem está devendo este mês?")
-    pending = live.tool_returns(result, "list_pending_payments")
-    assert pending and pending[-1]["success"] is True
+    """Seed a past pending session at 7h → 'quem está em aberto?' → list_pending_payments names client.
+
+    Uses hour 7 to avoid cross-test collisions (same isolation strategy as mark_paid).
+    """
+    from datetime import datetime, timedelta
+
+    from app.models.calendar import Calendar
+    from app.models.client import Client
+    from app.models.event import Event, EventStatus, PaymentStatus
+
+    client = live.db.query(Client).filter(
+        Client.user_id == live.user_id, Client.name == live.client_name
+    ).first()
+    calendar = (
+        live.db.query(Calendar)
+        .filter(Calendar.user_id == live.user_id, Calendar.is_primary == True)  # noqa: E712
+        .first()
+    )
+    if calendar is None:
+        from app.services.event_service import EventService
+        calendar = EventService(live.db).get_primary_calendar(live.user_id)
+
+    yesterday_7h = (
+        datetime.now(live.tz).replace(hour=7, minute=0, second=0, microsecond=0)
+        - timedelta(days=1)
+    )
+    ev = Event(
+        user_id=live.user_id, client_id=client.id, calendar_id=calendar.id,
+        title=f"Sessão {live.client_name}", google_event_id=f"billing-test-list-pending-7h",
+        start_time=yesterday_7h, end_time=yesterday_7h + timedelta(hours=1),
+        price=Decimal("200"), billable=True,
+        status=EventStatus.SCHEDULED.value,
+        payment_status=PaymentStatus.PENDING.value,
+    )
+    live.db.add(ev)
+    live.db.commit()
+
+    try:
+        result = await live.send("quem está em aberto?")
+        pending = live.tool_returns(result, "list_pending_payments")
+        assert pending and pending[-1]["success"] is True, (
+            f"list_pending_payments not called or failed. output: {result.output!r} tool_returns: {pending!r}"
+        )
+        first_name = live.client_name.split()[0]
+        assert first_name in result.output, (
+            f"client name '{first_name}' not in agent reply: {result.output!r}"
+        )
+    finally:
+        live.db.delete(ev)
+        live.db.commit()
 
 
-@pytest.mark.skip(reason=_feature("Plano 3 — cobrança (send_payment_reminder) não implementado"))
 async def test_billing_send_reminder(live):
-    """'manda um lembrete de cobrança pra Maria' → send_payment_reminder."""
-    result = await live.send(f"manda um lembrete de cobrança pra {live.client_name}")
-    reminder = live.tool_returns(result, "send_payment_reminder")
-    assert reminder and reminder[-1]["success"] is True
+    """Seed a past pending session at 7h → 'manda um lembrete pra Maria' → send_payment_reminder called.
+
+    The reminder targets live.client_phone (controlled test number — not a real patient).
+    Uses hour 7 for isolation (same strategy as the other billing tests).
+    Asserts the tool was called and the agent confirms ('Enviei').
+    """
+    from datetime import datetime, timedelta
+
+    from app.models.calendar import Calendar
+    from app.models.client import Client
+    from app.models.event import Event, EventStatus, PaymentStatus
+
+    client = live.db.query(Client).filter(
+        Client.user_id == live.user_id, Client.name == live.client_name
+    ).first()
+    calendar = (
+        live.db.query(Calendar)
+        .filter(Calendar.user_id == live.user_id, Calendar.is_primary == True)  # noqa: E712
+        .first()
+    )
+    if calendar is None:
+        from app.services.event_service import EventService
+        calendar = EventService(live.db).get_primary_calendar(live.user_id)
+
+    yesterday_7h = (
+        datetime.now(live.tz).replace(hour=7, minute=0, second=0, microsecond=0)
+        - timedelta(days=1)
+    )
+    ev = Event(
+        user_id=live.user_id, client_id=client.id, calendar_id=calendar.id,
+        title=f"Sessão {live.client_name}", google_event_id=f"billing-test-reminder-7h",
+        start_time=yesterday_7h, end_time=yesterday_7h + timedelta(hours=1),
+        price=Decimal("200"), billable=True,
+        status=EventStatus.SCHEDULED.value,
+        payment_status=PaymentStatus.PENDING.value,
+    )
+    live.db.add(ev)
+    live.db.commit()
+
+    try:
+        result = await live.send(
+            f"manda um lembrete de cobrança pra {live.client_name}, "
+            f"telefone {live.client_phone}"
+        )
+        reminder = live.tool_returns(result, "send_payment_reminder")
+        assert reminder and reminder[-1]["success"] is True, (
+            f"send_payment_reminder not called or failed. output: {result.output!r} "
+            f"tool_returns: {reminder!r}"
+        )
+        assert "enviei" in result.output.lower(), (
+            f"expected 'Enviei' in agent reply: {result.output!r}"
+        )
+    finally:
+        live.db.delete(ev)
+        live.db.commit()
