@@ -140,6 +140,33 @@ class EventService:
         self.db.refresh(template)
         return template
 
+    def set_payment_status(self, event: Event, status: str) -> Event:
+        event.payment_status = status
+        self.db.commit()
+        self.db.refresh(event)
+        return event
+
+    def list_pending_payments(self, user_id: UUID, *, client_id=None, start=None, end=None, now) -> list[Event]:
+        """Billable, not-yet-paid sessions that have already occurred (start_time < now).
+        Excludes cancelled-status only if non-billable; a billable cancelled no-show still
+        counts. Excludes series templates."""
+        q = self.db.query(Event).filter(
+            and_(
+                Event.user_id == user_id,
+                Event.billable == True,  # noqa: E712
+                Event.payment_status.in_([PaymentStatus.PENDING.value, PaymentStatus.PARTIAL.value]),
+                Event.start_time < now,
+                ~and_(Event.is_recurring == True, Event.parent_event_id.is_(None)),  # noqa: E712
+            )
+        )
+        if client_id is not None:
+            q = q.filter(Event.client_id == client_id)
+        if start is not None:
+            q = q.filter(Event.start_time >= start)
+        if end is not None:
+            q = q.filter(Event.start_time < end)
+        return q.order_by(Event.start_time).all()
+
     def set_billable(self, event: Event, value: bool) -> Event:
         event.billable = value
         self.db.commit()
