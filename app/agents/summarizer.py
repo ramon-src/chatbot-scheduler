@@ -13,10 +13,26 @@ from app.core.config import settings
 if TYPE_CHECKING:
     from app.models.chat_session import ChatMessage
 
-SUMMARY_SYSTEM_PROMPT = """Você resume conversas entre um psicólogo e seu assistente de consultório.
-Atualize o resumo para preservar SÓ o que ajuda a continuar a conversa: clientes mencionados,
-decisões tomadas, valores/dias de cobrança, agendamentos e pendências em aberto.
-Responda em Português do Brasil, em poucas frases, sem IDs, JSON, URLs ou markdown."""
+SUMMARY_SYSTEM_PROMPT = """Você mantém um resumo vivo da conversa entre um psicólogo e seu assistente de consultório.
+A cada rodada você recebe o resumo anterior e as novas mensagens e devolve o resumo ATUALIZADO.
+
+PRESERVE (núcleo — mantenha SEMPRE, mesmo enxugando):
+- Clientes ativos e seus dados finais: nome, telefone, dia de cobrança, preço da consulta.
+- Agendamentos válidos: cliente, data e hora.
+- Pendências em aberto e acionáveis (ex.: "cadastro da Ana aguardando o telefone").
+
+FAÇA FAXINA (corrija e descarte ao dobrar):
+- Fora de domínio: descarte qualquer trecho que não seja sobre clientes, agenda ou cobrança
+  (programação, SQL, banco de dados, devops, assuntos gerais), inclusive a recusa do assistente. Não vira memória.
+- Dado substituído: se um valor foi corrigido (ex.: preço 200 e depois 250, telefone trocado),
+  mantenha SÓ o valor final; o antigo some.
+- Fio morto: tentativas superadas ou que não levaram a nada saem.
+- Vazamento técnico: nunca inclua IDs, códigos, JSON, URLs ou markdown.
+
+VIÉS: na dúvida entre manter um detalhe de borda ou enxugar, enxugue. Mas pendência acionável
+NÃO é fio morto — preserve.
+
+FORMATO: Português do Brasil, poucas frases, texto simples, sem IDs, JSON, URLs ou markdown."""
 
 
 def build_summary_input(existing_summary: str | None, messages: list[ChatMessage]) -> str:

@@ -17,11 +17,13 @@ async def create_client_impl(
     invoice_day: int,
     consult_price: float,
     email: Optional[str] = None,
+    billing_mode: str = "monthly",
 ) -> dict:
     try:
         payload = ClientCreate(
             name=name, phone=phone, email=email, user_id=deps.user_id,
             invoice_day=invoice_day, consult_price=Decimal(str(consult_price)),
+            billing_mode=billing_mode,
         )
     except pydantic.ValidationError:
         return {"success": False, "data": None,
@@ -127,9 +129,10 @@ def register_client_tools(agent) -> None:
     async def create_client(
         ctx: RunContext[AgentDeps], name: str, phone: str,
         invoice_day: int, consult_price: float, email: Optional[str] = None,
+        billing_mode: str = "monthly",
     ) -> dict:
-        """Cadastra um novo cliente (nome+sobrenome, telefone, dia de cobrança, preço da consulta)."""
-        return await create_client_impl(ctx.deps, name, phone, invoice_day, consult_price, email)
+        """Cadastra um cliente. billing_mode: 'monthly' (cobra por mês) ou 'per_session' (por consulta)."""
+        return await create_client_impl(ctx.deps, name, phone, invoice_day, consult_price, email, billing_mode)
 
     @agent.tool
     async def find_client(
@@ -152,11 +155,12 @@ def register_client_tools(agent) -> None:
         invoice_day: Optional[int] = None,
         consult_price: Optional[float] = None,
         notes: Optional[str] = None,
+        billing_mode: Optional[str] = None,
     ) -> dict:
         """Atualiza dados de um cliente identificado pelo telefone."""
         fields = {k: v for k, v in {
             "name": name, "email": email, "invoice_day": invoice_day,
-            "consult_price": consult_price, "notes": notes,
+            "consult_price": consult_price, "notes": notes, "billing_mode": billing_mode,
         }.items() if v is not None}
         return await update_client_impl(ctx.deps, phone, **fields)
 

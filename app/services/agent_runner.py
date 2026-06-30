@@ -35,6 +35,12 @@ def build_agent_deps(db: Session, user, history_summary: str | None = None) -> A
         access = build_calendar_access(db, user, settings)
     except Exception:  # noqa: BLE001 - never 500 the chat on calendar setup
         access = None
+    outbound = None
+    try:
+        from app.channels.evolution_outbound import EvolutionOutboundAdapter
+        outbound = EvolutionOutboundAdapter(settings)
+    except Exception:  # noqa: BLE001 - never break the chat on outbound setup
+        outbound = None
     return AgentDeps(
         db=db,
         user_id=user.id,
@@ -45,6 +51,7 @@ def build_agent_deps(db: Session, user, history_summary: str | None = None) -> A
         client_service=ClientService(db),
         calendar_service=access.service if access else None,
         event_service=EventService(db),
+        outbound=outbound,
     )
 
 

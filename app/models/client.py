@@ -2,6 +2,8 @@
 Client model for SQLAlchemy
 """
 
+from enum import Enum
+
 from sqlalchemy import Column, String, Boolean, DateTime, Text, Date, ForeignKey, Integer, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -9,6 +11,12 @@ from sqlalchemy.orm import relationship
 import uuid
 
 from app.core.database import Base
+
+
+class BillingMode(str, Enum):
+    """How a client is billed."""
+    PER_SESSION = "per_session"
+    MONTHLY = "monthly"
 
 class Client(Base):
     """Client model"""
@@ -36,6 +44,7 @@ class Client(Base):
     notes = Column(Text, nullable=True)
     invoice_day = Column(Integer, nullable=True)  # nullable at DB level for legacy/other write paths; ClientCreate requires it on create
     consult_price = Column(Numeric(10, 2), nullable=True)  # nullable at DB level for legacy/other write paths; ClientCreate requires it on create
+    billing_mode = Column(String(20), nullable=False, server_default="monthly")
 
     # =============================================================================
     # STATUS

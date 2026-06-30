@@ -109,6 +109,21 @@ sim: ## Disparar um inbound de WhatsApp (fire-and-forget; usage: make sim PHONE=
 		-d "{\"event\":\"messages.upsert\",\"instance\":\"$(EVOLUTION_INSTANCE)\",\"data\":{\"key\":{\"remoteJid\":\"$(PHONE)@s.whatsapp.net\",\"fromMe\":false,\"id\":\"SIM-$$(uuidgen)\"},\"message\":{\"conversation\":\"$(MSG)\"},\"messageTimestamp\":1750000000,\"pushName\":\"Lead Sim\"}}" >/dev/null 2>&1 & )
 	@echo " ✅ disparado PHONE=$(PHONE) — terminal livre; a resposta chega no seu Whats quando o agente responder"
 
+eval-fast: ## Rodar os evals sem-Google (LLM real; usage: make eval-fast [MODEL=gpt-5.4-mini] [CASE=<substr>])
+	@RUN_EVAL=1 $(UV) run python -m evals.run --model $(or $(MODEL),gpt-5.4-mini) $(if $(CASE),--case $(CASE),)
+
+eval: ## Alias de eval-fast por enquanto (agenda/matriz vêm nas fases B/C)
+	@make eval-fast MODEL=$(or $(MODEL),gpt-5.4-mini) CASE=$(CASE)
+
+eval-summary: ## Rodar o eval de faxina do resumo (LLM real; usage: make eval-summary [MODEL=gpt-5.4-mini] [CASE=<substr>])
+	@RUN_EVAL=1 $(UV) run python -m evals.run --suite summary --model $(or $(MODEL),gpt-5.4-mini) $(if $(CASE),--case $(CASE),)
+
+eval-agenda: ## Rodar o eval de agenda (LLM real + calendário fake; usage: make eval-agenda [MODEL=gpt-5.4-mini] [CASE=<substr>])
+	@RUN_EVAL=1 $(UV) run python -m evals.run --suite agenda --model $(or $(MODEL),gpt-5.4-mini) $(if $(CASE),--case $(CASE),)
+
+eval-billing: ## Rodar o eval de cobrança (LLM real + outbound fake; usage: make eval-billing [MODEL=gpt-5.4-mini] [CASE=<substr>])
+	@RUN_EVAL=1 $(UV) run python -m evals.run --suite billing --model $(or $(MODEL),gpt-5.4-mini) $(if $(CASE),--case $(CASE),)
+
 evolution: ## Subir o Evolution API (+ postgres dedicado) no Docker
 	@echo "📲 Subindo Evolution API..."
 	@$(DOCKER_COMPOSE) up -d evolution_postgres evolution

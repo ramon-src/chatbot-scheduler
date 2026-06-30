@@ -41,6 +41,53 @@ def _fmt(dt: datetime, tz: str) -> str:
     return local.strftime("%d/%m às %Hh%M").replace("h00", "h")
 
 
+def _day_bounds(start: datetime, end: datetime) -> tuple[datetime, datetime]:
+    """Full-day window spanning [start, end), so list_events_in_range (which filters
+    by start_time) catches same-day events regardless of time."""
+    from datetime import time
+    lo = datetime.combine(start.date(), time.min, tzinfo=start.tzinfo)
+    hi = datetime.combine(end.date(), time.max, tzinfo=end.tzinfo)
+    return lo, hi
+
+
+def _find_overlaps(
+    deps: AgentDeps, start: datetime, end: datetime, *,
+    exclude_event_id=None, exclude_parent_id=None,
+) -> list:
+    """Active events of the professional whose [start_time, end_time) overlaps [start, end).
+    list_events_in_range already excludes cancelled events and series templates.
+
+    exclude_event_id: skip the event with this exact id (single-event self-exclusion).
+    exclude_parent_id: skip any event whose id or parent_event_id equals this value
+                       (series self-exclusion — omits template and all its siblings).
+    """
+    if deps.event_service is None:
+        return []
+    lo, hi = _day_bounds(start, end)
+    deps.event_service.ensure_occurrences(deps.user_id, lo, hi)
+    hits = []
+    for e in deps.event_service.list_events_in_range(deps.user_id, lo, hi):
+        if exclude_event_id is not None and e.id == exclude_event_id:
+            continue
+        if exclude_parent_id is not None:
+            if e.id == exclude_parent_id:
+                continue
+            if getattr(e, "parent_event_id", None) == exclude_parent_id:
+                continue
+        if e.start_time < end and start < e.end_time:
+            hits.append(e)
+    return hits
+
+
+def _conflict_warning(deps: AgentDeps, conflicts: list) -> tuple[str, str | None]:
+    """Plain-text warning suffix + the conflicting client's first name (or None)."""
+    if not conflicts:
+        return "", None
+    other = conflicts[0]
+    name = other.client.name.split()[0] if getattr(other, "client", None) else "outro cliente"
+    return f" Atenção: você já tem {name} nesse horário.", name
+
+
 async def _resolve_client(deps: AgentDeps, client_name, client_phone):
     """Return (client, error_dict). Exactly one of client/error is non-None."""
     if client_phone:
@@ -80,6 +127,8 @@ async def create_event_impl(
     end = start_time + timedelta(minutes=minutes)
     summary = title or f"Sessão - {client.name}"
 
+    conflicts = _find_overlaps(deps, start_time, end)
+
     created = deps.calendar_service.create_event(summary=summary, start=start_time, end=end)
     try:
         deps.event_service.record_event(
@@ -93,8 +142,13 @@ async def create_event_impl(
         _compensate_google(deps, created["id"])
         return _dual_write_failed()
     first = client.name.split()[0]
-    return {"success": True, "data": {"client": client.name, "start": start_time.isoformat()},
-            "message": f"Agendei {first} para {_fmt(start_time, deps.timezone)}."}
+    warning, who = _conflict_warning(deps, conflicts)
+    data = {"client": client.name, "start": start_time.isoformat()}
+    if who:
+        data["conflict"] = True
+        data["conflict_with"] = who
+    return {"success": True, "data": data,
+            "message": f"Agendei {first} para {_fmt(start_time, deps.timezone)}." + warning}
 
 
 async def create_recurring_event_impl(
@@ -114,6 +168,8 @@ async def create_recurring_event_impl(
     summary = title or f"Sessão - {client.name}"
     rrule = deps.calendar_service.build_weekly_rrule(weekdays, until)
 
+    conflicts = _find_overlaps(deps, start_time, end)
+
     created = deps.calendar_service.create_event(
         summary=summary, start=start_time, end=end, recurrence=[rrule]
     )
@@ -127,8 +183,13 @@ async def create_recurring_event_impl(
         _compensate_google(deps, created["id"])
         return _dual_write_failed()
     first = client.name.split()[0]
-    return {"success": True, "data": {"client": client.name},
-            "message": f"Agendei sessões recorrentes para {first}, começando {_fmt(start_time, deps.timezone)}."}
+    warning, who = _conflict_warning(deps, conflicts)
+    data = {"client": client.name}
+    if who:
+        data["conflict"] = True
+        data["conflict_with"] = who
+    return {"success": True, "data": data,
+            "message": f"Agendei sessões recorrentes para {first}, começando {_fmt(start_time, deps.timezone)}." + warning}
 
 
 async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
@@ -151,6 +212,29 @@ async def list_events_impl(deps: AgentDeps, period: str = "this_week") -> dict:
             "message": f"Você tem {len(items)} compromisso(s): {lines}."}
 
 
+def _find_single_event_for_client(deps, client, period: str):
+    """Return (event, error). Exactly one is non-None. Mirrors cancel's resolution:
+    0 matches -> not-found; >1 -> ask for the exact day."""
+    try:
+        start, end = calculate_date_range(period, deps.current_datetime)
+    except ValueError:
+        return None, {"success": False, "data": None,
+                      "message": "Não entendi o período. Tente 'hoje' ou 'esta semana'."}
+    deps.event_service.ensure_occurrences(deps.user_id, start, end)
+    events = [
+        e for e in deps.event_service.list_events_in_range(deps.user_id, start, end)
+        if e.client_id == client.id
+    ]
+    if not events:
+        first = client.name.split()[0]
+        return None, {"success": False, "data": None,
+                      "message": f"Não encontrei compromisso de {first} nesse período."}
+    if len(events) > 1:
+        return None, {"success": False, "data": {"count": len(events)},
+                      "message": "Encontrei mais de um compromisso nesse período. Pode me dizer o dia exato?"}
+    return events[0], None
+
+
 async def cancel_event_impl(
     deps: AgentDeps, *, client_name=None, client_phone=None,
     period: str = "this_week", reason: str | None = None,
@@ -161,26 +245,10 @@ async def cancel_event_impl(
     client, error = await _resolve_client(deps, client_name, client_phone)
     if error:
         return error
-    try:
-        start, end = calculate_date_range(period, deps.current_datetime)
-    except ValueError:
-        return {"success": False, "data": None,
-                "message": "Não entendi o período. Tente 'hoje' ou 'esta semana'."}
 
-    deps.event_service.ensure_occurrences(deps.user_id, start, end)
-    events = [
-        e for e in deps.event_service.list_events_in_range(deps.user_id, start, end)
-        if e.client_id == client.id
-    ]
-    if not events:
-        first = client.name.split()[0]
-        return {"success": False, "data": None,
-                "message": f"Não encontrei compromisso de {first} nesse período."}
-    if len(events) > 1:
-        return {"success": False, "data": {"count": len(events)},
-                "message": "Encontrei mais de um compromisso nesse período. Pode me dizer o dia exato?"}
-
-    event = events[0]
+    event, error = _find_single_event_for_client(deps, client, period)
+    if error:
+        return error
     billable = charge if charge is not None else False
     # Google is the source of truth: cancel there first (best-effort).
     try:
@@ -199,6 +267,65 @@ async def cancel_event_impl(
     first = client.name.split()[0]
     return {"success": True, "data": {"client": client.name},
             "message": f"Cancelei o compromisso de {first}."}
+
+
+async def reschedule_event_impl(
+    deps: AgentDeps, *, client_name=None, client_phone=None,
+    period: str = "this_week", new_start_time: datetime, duration_minutes: int | None = None,
+) -> dict:
+    if deps.calendar_service is None or deps.event_service is None:
+        return _not_connected()
+    client, error = await _resolve_client(deps, client_name, client_phone)
+    if error:
+        return error
+    event, error = _find_single_event_for_client(deps, client, period)
+    if error:
+        return error
+
+    new_start = _ensure_aware(new_start_time, deps.timezone)
+    minutes = duration_minutes or deps.default_consult_minutes
+    new_end = new_start + timedelta(minutes=minutes)
+
+    is_series = event.parent_event_id is not None or event.is_recurring
+    if is_series:
+        template = deps.event_service.get_event(event.parent_event_id) if event.parent_event_id else event
+        if template is None or not template.google_event_id:
+            return _dual_write_failed()
+        # Guard: series cadence is tied to a weekday (BYDAY in RRULE). Changing the
+        # weekday would diverge the template's stored start from the materialised
+        # occurrences and from Google. Refuse before any mutation.
+        if new_start.weekday() != event.start_time.weekday():
+            return {
+                "success": False, "data": None,
+                "message": (
+                    "Por enquanto só consigo mudar o horário de uma sessão recorrente, "
+                    "não o dia da semana. Quer manter o mesmo dia e só trocar a hora?"
+                ),
+            }
+        conflicts = _find_overlaps(deps, new_start, new_end, exclude_parent_id=template.id)
+        try:
+            deps.calendar_service.update_event(template.google_event_id, start=new_start, end=new_end)
+        except Exception:
+            return _dual_write_failed()
+        deps.event_service.reschedule_series(template, new_start, new_end, from_dt=deps.current_datetime)
+    else:
+        conflicts = _find_overlaps(deps, new_start, new_end, exclude_event_id=event.id)
+        if not event.google_event_id:
+            return _dual_write_failed()
+        try:
+            deps.calendar_service.update_event(event.google_event_id, start=new_start, end=new_end)
+        except Exception:
+            return _dual_write_failed()
+        deps.event_service.update_event(event, start=new_start, end=new_end)
+
+    first = client.name.split()[0]
+    warning, who = _conflict_warning(deps, conflicts)
+    data = {"client": client.name, "start": new_start.isoformat()}
+    if who:
+        data["conflict"] = True
+        data["conflict_with"] = who
+    return {"success": True, "data": data,
+            "message": f"Remarquei {first} para {_fmt(new_start, deps.timezone)}." + warning}
 
 
 async def set_session_charge_impl(
@@ -276,6 +403,20 @@ def register_calendar_tools(agent) -> None:
         return await cancel_event_impl(
             ctx.deps, client_name=client_name, client_phone=client_phone,
             period=period, reason=reason, charge=charge,
+        )
+
+    @agent.tool
+    async def reschedule_event(
+        ctx: RunContext[AgentDeps], new_start_time: str,
+        client_name: str | None = None, client_phone: str | None = None,
+        period: str = "this_week", duration_minutes: int | None = None,
+    ) -> dict:
+        """Remarca o compromisso de um cliente para um novo horário. new_start_time em ISO 8601.
+        Exige cliente cadastrado e um compromisso existente no período."""
+        return await reschedule_event_impl(
+            ctx.deps, client_name=client_name, client_phone=client_phone,
+            period=period, new_start_time=datetime.fromisoformat(new_start_time),
+            duration_minutes=duration_minutes,
         )
 
     @agent.tool
